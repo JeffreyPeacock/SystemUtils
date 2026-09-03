@@ -115,8 +115,22 @@ are board fields, not labels** — there are no `priority:*` labels in this repo
 | Priority | p1 (highest) … p5 (lowest) |
 | Area | Scanning, Database, Reporting, GUI, Tooling, Docs |
 
+### component: is the project, Area is the kind of work
+
+**`component:` names which utility the work belongs to, not what sort of work it
+is.** Development tooling for FileManager — its tests, fixtures, coverage
+reporting, pre-commit hook — is `component:file-manager` with **Area = Tooling**.
+Tests are development work *on that project*, so they carry that project's
+component.
+
+`component:ops` is reserved for work that belongs to no single utility: the CI
+workflow, repo-level scripts, the board and labels themselves. If the change
+lives inside a utility's directory, it is that utility's component.
+
 The `component:` label decides which board **view** an item appears on; `Area`
-subdivides within a component and does not affect views.
+subdivides within a component and does not affect views. Getting this backwards
+— filing FileManager's test work as `component:ops` — hides it from the
+FileManager view, which is the one place anyone looks for FileManager work.
 
 `p1` is reserved for data loss or a completely broken feature. For FileManager
 that means something like *the audit deletes rows for files that still exist* —

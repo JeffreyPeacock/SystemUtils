@@ -104,6 +104,12 @@ The board's per-component views filter on these labels
 right view — the `Area` field subdivides *within* a component and does not
 affect which view an item appears on.
 
+**`component:` is the project; `Area` is the kind of work.** Development tooling
+for a utility — tests, fixtures, coverage reporting, hooks — takes **that
+utility's component** with `Area = Tooling`, not `component:ops`. Tests are
+development work on that project. `component:ops` is only for work belonging to
+no single utility: the CI workflow, repo-level scripts, the board itself.
+
 ## Views
 
 | # | Name | Layout | Filter |
