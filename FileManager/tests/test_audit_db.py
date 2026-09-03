@@ -13,7 +13,10 @@ class TestAuditDB(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.db_path = 'test_audit.db'
+        # Absolute, in a scratch directory. This used to be the relative
+        # 'test_audit.db', which landed in the repository working directory.
+        cls.tmp_dir = tempfile.mkdtemp()
+        cls.db_path = os.path.join(cls.tmp_dir, 'test_audit.db')
         cls.test_data_dir = tempfile.mkdtemp()
 
     def setUp(self):
@@ -28,8 +31,8 @@ class TestAuditDB(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        shutil.rmtree(cls.test_data_dir)
-        os.remove(cls.db_path)
+        shutil.rmtree(cls.test_data_dir, ignore_errors=True)
+        shutil.rmtree(cls.tmp_dir, ignore_errors=True)
 
     def test_audit_db_file_removed(self):
         file_path = os.path.join(self.test_data_dir, 'test-file.txt')
