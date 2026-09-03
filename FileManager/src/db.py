@@ -261,7 +261,26 @@ def find_duplicates_with_min_count(db_path, min_count=1):
     return duplicates
 
 
-def audit_db(db_path, num_threads, process_file, exclude_prefix=None):
+def looks_like_a_missing_volume(file_path):
+    """True when this path is absent AND so is the directory that held it.
+
+    Distinguishes the two ways a recorded path can stop existing:
+
+      a deleted FILE       leaves its parent directory in place
+      a missing VOLUME     takes the whole tree with it
+
+    That difference is the only signal available without recording mount points
+    at scan time, and it is a reliable one: `rm foo.txt` cannot remove the
+    directory `foo.txt` lived in, whereas a volume that failed to mount leaves
+    nothing beneath its mount point. Treating the second case as "the file was
+    deleted" is what empties thousands of rows in one pass (#2).
+    """
+    parent = os.path.dirname(file_path)
+    return not os.path.exists(file_path) and not os.path.isdir(parent)
+
+
+def audit_db(db_path, num_threads, process_file, exclude_prefix=None,
+             dry_run=False, prune_missing_dirs=False):
     """
     Audit the database for file changes and reprocess files if necessary.
 
@@ -270,28 +289,57 @@ def audit_db(db_path, num_threads, process_file, exclude_prefix=None):
         num_threads (int): The number of threads to use for concurrent operations.
         process_file (function): The function to process a file.
         exclude_prefix (list, optional): A list of prefixes to exclude paths from processing.
+        dry_run (bool): Report what would change and modify nothing.
+        prune_missing_dirs (bool): Also remove rows whose parent directory is
+            gone. Off by default -- see `looks_like_a_missing_volume`.
+
+    Returns:
+        dict: counts keyed 'removed', 'reprocessed', 'skipped', 'suspect',
+            'checked'. On a dry run 'removed' and 'reprocessed' are what *would*
+            have happened.
     """
     batch_size = 100
     processed_files_count = 0
+    counts = {'removed': 0, 'reprocessed': 0, 'skipped': 0,
+              'suspect': 0, 'checked': 0}
+    suspect_paths = []
 
     def process_file_info(file_info):
         nonlocal processed_files_count
         file_path, db_size, db_last_modified = file_info
+        counts['checked'] += 1
 
         # Skip files with any of the specified prefixes
         if exclude_prefix and any(file_path.startswith(prefix) for prefix in exclude_prefix):
             logging.info(f"SKIPPED: {file_path} (Matches exclude prefix)")
+            counts['skipped'] += 1
             return
 
         if not os.path.exists(file_path):
-            logging.info(f"REMOVED: {file_path} (File no longer exists)")
-            remove_record(db_path, file_path)
+            if looks_like_a_missing_volume(file_path) and not prune_missing_dirs:
+                logging.warning(
+                    f"SUSPECT: {file_path} (its directory is missing too -- "
+                    f"unmounted volume? row kept)"
+                )
+                counts['suspect'] += 1
+                suspect_paths.append(file_path)
+                return
+            counts['removed'] += 1
+            if dry_run:
+                logging.info(f"WOULD REMOVE: {file_path} (File no longer exists)")
+            else:
+                logging.info(f"REMOVED: {file_path} (File no longer exists)")
+                remove_record(db_path, file_path)
         else:
             size = os.path.getsize(file_path)
             last_modified = get_file_mtime_in_ms(file_path)
             if size != db_size or last_modified != db_last_modified:
-                logging.info(f"REPROCESSING: {file_path} (Size or last modified time changed)")
-                process_file(file_path, db_path)
+                counts['reprocessed'] += 1
+                if dry_run:
+                    logging.info(f"WOULD REPROCESS: {file_path} (Size or last modified time changed)")
+                else:
+                    logging.info(f"REPROCESSING: {file_path} (Size or last modified time changed)")
+                    process_file(file_path, db_path)
         processed_files_count += 1
 
     retries = MAX_RETRIES
@@ -329,7 +377,25 @@ def audit_db(db_path, num_threads, process_file, exclude_prefix=None):
     if retries == 0:
         raise Exception(f"Failed to audit database after {MAX_RETRIES} retries due to database lock")
 
-        logging.info(f"Total files processed: {processed_files_count}")  # Report the total count
+    # This summary used to sit after the `raise` above, so it never ran and the
+    # total was never reported.
+    verb = 'would remove' if dry_run else 'removed'
+    logging.info(
+        f"AUDIT {'(dry run) ' if dry_run else ''}checked {counts['checked']}: "
+        f"{verb} {counts['removed']}, reprocessed {counts['reprocessed']}, "
+        f"skipped {counts['skipped']}, suspect {counts['suspect']}"
+    )
+    if suspect_paths:
+        logging.warning(
+            f"{len(suspect_paths)} row(s) kept because their directory is also "
+            f"missing -- check whether a volume failed to mount. Re-run with "
+            f"--prune-missing-dirs to remove them anyway."
+        )
+        for path in suspect_paths[:10]:
+            logging.warning(f"  SUSPECT: {path}")
+        if len(suspect_paths) > 10:
+            logging.warning(f"  ... and {len(suspect_paths) - 10} more")
+    return counts
 
 
 def scan_and_report_unique_files(directory, db_path, num_threads=4):

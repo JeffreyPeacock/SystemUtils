@@ -18,6 +18,7 @@ from src.reporting import (
     report_prefix_count, compare_directories
 )
 from src.gui import show_duplicates_gui
+from src.utils import report_settings
 
 # Configure logging
 logging.basicConfig(
@@ -32,14 +33,17 @@ def usage():
     Usage:
         main.py <action> <path> [--db-path <db_path>] [--threads <num_threads>]
         [--prefix <prefix>] [--dirA <dirA>] [--dirB <dirB>] [--use-gui] [--min-duplicates <min_duplicates>]
-        [--exclude-prefix <exclude_prefix>] [--regex]
+        [--exclude-prefix <exclude_prefix>] [--regex] [--dry-run]
+        [--prune-missing-dirs]
 
     Actions:
         scan                Scan a comma-separated list of directories or files.
         check-file          Check a file for duplicates.
         scan-dir-report     Scan a directory and report duplicates.
         report-duplicates   Report all duplicates in the database.
-        audit-db            Audit the database for file changes.
+        audit-db            Re-verify every recorded path. Drops rows for files
+                            that no longer exist and rehashes those that changed.
+                            Use --dry-run first: this action deletes rows.
         report-duplicate-sizes Report the total size of duplicate files.
         report-prefix-count Report the number of files that match a given prefix.
         remove-record       Remove the record for exactly the specified path.
@@ -64,12 +68,18 @@ def usage():
         --exclude-prefix    Comma-separated list of prefixes to exclude paths from processing during audit-db.
         --regex             Treat remove-record's <path> as a regex matched against
                             the whole path. Without it the path is taken literally.
+        --dry-run           audit-db only: report what would change, change nothing.
+        --prune-missing-dirs
+                            audit-db only: also remove rows whose parent directory
+                            is gone. Off by default, because that is what an
+                            unmounted volume looks like.
 
     Examples:
         python main.py scan /path/to/dir1,/path/to/dir2 --db-path /path/to/db --threads 4
         python main.py check-file /path/to/file --db-path /path/to/db --threads 4
         python main.py scan-dir-report /path/to/dir --db-path /path/to/db --threads 4
         python main.py report-duplicates --db-path /path/to/db --threads 4 --use-gui
+        python main.py audit-db --db-path /path/to/db --threads 4 --dry-run
         python main.py audit-db --db-path /path/to/db --threads 4 --exclude-prefix /exclude/path1,/exclude/path2
         python main.py report-duplicate-sizes --db-path /path/to/db
         python main.py report-prefix-count --db-path /path/to/db --prefix <prefix>
@@ -79,6 +89,18 @@ def usage():
         python main.py get-file-info /path/to/file --db-path /path/to/db
         python main.py scan-unique-files /path/to/dir --db-path /path/to/db
     """)
+
+def _origin(flag):
+    """Was this flag given on the command line, or is its value a default?
+
+    Printed alongside each setting so a log distinguishes "configured to 4"
+    from "defaulted to 4". A value that merely looks right is not evidence it
+    was set -- see docs/Development-Principles.md section 2.
+    """
+    return 'set' if any(
+        arg == flag or arg.startswith(flag + '=') for arg in sys.argv[1:]
+    ) else 'default'
+
 
 def get_file_info_action(db_path, file_path):
     file_info = get_file_info(db_path, file_path)
@@ -128,6 +150,14 @@ def main():
     parser.add_argument(
         '--use-gui', action='store_true',
         help='Use GUI for displaying duplicates'
+    )
+    parser.add_argument(
+        '--dry-run', action='store_true',
+        help='audit-db only: report what would change without changing it'
+    )
+    parser.add_argument(
+        '--prune-missing-dirs', action='store_true',
+        help='audit-db only: also remove rows whose parent directory is missing'
     )
     parser.add_argument(
         '--regex', action='store_true',
@@ -201,7 +231,20 @@ def main():
 
     elif args.action == 'audit-db':
         exclude_prefixes = args.exclude_prefix.split(',') if args.exclude_prefix else None
-        audit_db(db_path, args.threads, process_file, exclude_prefix=exclude_prefixes)
+        # State what this run was configured to do before it does any of it --
+        # audit-db deletes rows, and the settings that governed a past run are
+        # not recoverable afterwards. docs/Development-Principles.md section 2.
+        report_settings('audit-db', [
+            ('db_path', db_path, _origin('--db-path')),
+            ('threads', args.threads, _origin('--threads')),
+            ('exclude_prefix', exclude_prefixes, _origin('--exclude-prefix')),
+            ('dry_run', args.dry_run, _origin('--dry-run')),
+            ('prune_missing_dirs', args.prune_missing_dirs, _origin('--prune-missing-dirs')),
+        ])
+        audit_db(db_path, args.threads, process_file,
+                 exclude_prefix=exclude_prefixes,
+                 dry_run=args.dry_run,
+                 prune_missing_dirs=args.prune_missing_dirs)
     elif args.action == 'report-duplicate-sizes':
         report_duplicate_sizes(db_path)
     elif args.action == 'report-prefix-count':
