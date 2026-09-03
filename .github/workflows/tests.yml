@@ -1,0 +1,45 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  file-manager:
+    name: FileManager
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: FileManager
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+
+      - name: Install dev dependencies
+        run: pip install -r requirements-dev.txt
+
+      # src/main.py imports src/gui.py, which imports tkinter, so the test
+      # suite needs it even though nothing under test opens a window.
+      - name: Verify tkinter is available
+        run: python -c "import tkinter; print('tkinter', tkinter.TkVersion)"
+
+      - name: pytest
+        run: python -m pytest
+
+      - name: mypy
+        run: python -m mypy src/
+
+      - name: Upload coverage and test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: filemanager-reports
+          path: |
+            FileManager/coverage.xml
+            FileManager/test-results.xml
+          if-no-files-found: warn

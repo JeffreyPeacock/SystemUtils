@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pip show *)",
+      "Bash(pyenv versions*)",
+      "Bash(pyenv version)",
+      "Bash(pyenv which *)",
+
+      "Bash(python -m pytest*)",
+      "Bash(python -m mypy src/*)",
+      "Bash(python -m coverage *)",
+      "Bash(python src/main.py help)",
+      "Bash(python src/main.py report-duplicate-sizes*)",
+      "Bash(python src/main.py report-duplicates*)",
+      "Bash(python src/main.py report-prefix-count*)",
+      "Bash(python src/main.py get-file-info*)",
+
+      "Bash(pytest*)",
+      "Bash(mypy src/*)"
+    ]
+  }
+}

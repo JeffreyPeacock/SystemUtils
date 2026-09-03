@@ -1,0 +1,152 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Workflow
+
+Do not make any changes until you have 95% confidence in what needs to be built — ask follow-up questions to reach that confidence.
+
+For every bug fix or feature:
+
+1. **Branch first, from an up-to-date `main`** — `git checkout main && git pull` so your base matches `origin/main`, *then* create a branch following the naming convention below and switch to it before making any code changes. Exception: documentation-only changes (CLAUDE.md, README, comments) may be committed directly to `main` (still pull first).
+2. **Test before PR** — `python -m pytest` and `python -m mypy src/` must both pass before you open a pull request.
+3. **Monitor CI after PR** — check that all GitHub Actions pass. Report failures to the user before proceeding.
+4. **Return to main** — immediately after opening the PR, run `git checkout main` so the working tree is clean for the next task.
+
+## Repository layout
+
+This repository is a container for small, independent system utilities. Each is
+a subdirectory with its own `CLAUDE.md`, `README.md`, `doc/`, and test suite.
+
+| Directory | Language | Purpose |
+|-----------|----------|---------|
+| `FileManager/` | Python | MD5-based duplicate-file finder over SQLite: scans filesystems, records checksums, reports duplicates across mount points |
+
+The repo root holds only shared machinery: this file, `README.md`,
+`doc/Development-Principles.md`, `.claude/`, and `.gitignore`.
+
+**Orientation.** The repo root is `~/Workspace/JeffreyPeacock.com/SystemUtils`;
+confirm with `git rev-parse --show-toplevel`. Git paths therefore carry the
+utility prefix — `FileManager/src/db.py`, not `src/db.py` — while the commands
+in each utility's CLAUDE.md are written to be run **from inside that utility's
+directory**. Read every path against which of the two you are doing.
+
+## Python environment
+
+A single pyenv-virtualenv serves the whole repo, selected by `.python-version`
+at the root:
+
+```
+sys-utils  →  ~/.pyenv/versions/3.14.7/envs/sys-utils   (Python 3.14.7)
+```
+
+`.python-version` is **gitignored** — it names a local environment, not a
+portable fact. Recreate it on a new machine with:
+
+```bash
+pyenv virtualenv 3.14.7 sys-utils
+pyenv local sys-utils
+pip install -r FileManager/requirements-dev.txt
+```
+
+There are no runtime dependencies anywhere in this repo — every utility is
+standard-library only. `requirements-dev.txt` holds the test and type tooling.
+
+**Watch for a stale `VIRTUAL_ENV`.** A shell that inherited `VIRTUAL_ENV` from
+another project silently wins over the pyenv shim, so bare `python` can be a
+completely different interpreter from the one `pyenv version` reports. Check
+`which python` before trusting a version number; `pyenv exec python` bypasses
+the problem.
+
+## Branch naming convention
+
+Feature branches are prefixed with the utility they touch:
+
+```
+file-manager/fix-audit-removes-live-rows
+ops/add-ci-workflow
+feature/shared-checksum-cache    ← touches more than one utility
+chore/update-dev-dependencies    ← deps, CI, config
+docs/rewrite-readme              ← documentation only (may also go direct to main)
+```
+
+## Commit attribution
+
+Commits carry a `Co-Authored-By` trailer and a `Claude-Session` link for work
+done through Claude Code. Note that the reference project this repo's
+conventions were adapted from (WhiteFeather/WTIS) forbids AI attribution
+entirely — if you want that rule here instead, say so and it applies from the
+next commit.
+
+## Organisation & Repository
+
+- **Owner:** `JeffreyPeacock` — a personal account, **not** an organisation
+- **Repository:** `JeffreyPeacock/SystemUtils` (private)
+- **Project board:** SystemUtils, number `14` — https://github.com/users/JeffreyPeacock/projects/14
+
+Two consequences of the owner being a user rather than an organisation, both of
+which break queries copied from an org-owned repo:
+
+- Project GraphQL uses `user(login: "JeffreyPeacock")`, never `organization(login: ...)`. The issue-scoped form `repository(...).issue(N).projectItems` needs no owner type and is preferred.
+- **Custom Issue Types do not exist** — `repository.issueTypes` returns `null`. Type is carried by a `type:` label. Do not attempt the `updateIssue(issueTypeId:)` mutation.
+
+## GitHub project management
+
+Every issue and PR carries a `component:` label, a `type:` label, and a
+`priority:pN` label.
+
+| Label | Meaning |
+|-------|---------|
+| `component:file-manager` | FileManager |
+| `component:cross-cutting` | Touches more than one utility |
+| `component:ops` | Repo tooling, CI, packaging |
+| `type:bug` / `type:feature` / `type:task` | Broken / new capability / chore |
+| `type:security` / `type:docs` | Security / documentation |
+| `priority:p1` … `priority:p5` | Critical → trivial (rubric in `/priority-review`) |
+
+Board columns: **Backlog** → **Ready** → **In Progress** → **In Review** → **Done**.
+
+`p1` is reserved for data loss or a completely broken feature. For FileManager
+that means something like *the audit deletes rows for files that still exist* —
+this tool's whole output is a list of files a human may then delete, so a wrong
+answer has consequences past the process. Do not inflate p1 for anything less.
+
+### Querying the board efficiently
+
+**Filter at the source; never fetch the whole board and filter locally.** Scope
+every query to the specific component, open only, newest-first, with a small cap.
+The board is small today; the habit is what keeps it correct as it grows, and a
+scoped query is never worse.
+
+```bash
+gh issue list --repo JeffreyPeacock/SystemUtils --label "component:file-manager" \
+  --state open --limit 100
+```
+
+For a known issue's project-item ID, query the issue directly rather than
+scanning the board — see `.claude/commands/board-config.md`, which is the single
+source of truth for every ID the slash commands use.
+
+## Claude Code Skills
+
+Slash commands live in `.claude/commands/` at the repo root and are symlinked
+into each utility's `.claude/commands/`, so the root copy is the only one to edit.
+
+| Command | Description |
+|---------|-------------|
+| `/new-issue` | Create a GitHub issue, label it, add it to the board in Backlog, regenerate the priority review |
+| `/fix-ticket` | Fix an issue end-to-end: board → branch → fix → tests → mypy → PR → CI |
+| `/merge-pr` | Verify CI, squash-merge, move issues to Done, update docs and the ratchets |
+| `/priority-review` | Rebuild a component's priority-ordered ticket table |
+| `/create-plan` | Enter plan mode for a described task |
+| `/prep-compaction` | Update CLAUDE.md, README.md, and memory files; commit and push |
+| `/trim-claude-md` | Bring a CLAUDE.md under the 40k character limit without losing anything |
+
+`board-config.md` in the same directory is not a command — it is the shared
+identifier table the commands read.
+
+## Documentation hierarchy
+
+**`CLAUDE.md`** = operational reference: commands, config, non-obvious constraints, gotchas. **Target <34k chars, hard limit 40k.** · **`README.md`** = new-developer orientation · **`doc/Architecture+Design.md`** = design decisions (problem / decision / alternatives rejected) · **`doc/<Subject>.md`** = deep dive · repo-root **`doc/Development-Principles.md`** = durable lessons about how to build and sequence work.
+
+**When trimming, assign every removed item to one of those *before* deleting it** — unless it is already elsewhere (note where) or pure PR attribution.

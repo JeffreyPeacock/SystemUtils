@@ -1,0 +1,52 @@
+{
+  "permissions": {
+    "deny": [
+      "Bash(gh repo delete*)",
+      "Bash(gh repo rename*)",
+      "Bash(gh repo archive*)",
+      "Bash(gh secret *)",
+      "Bash(gh gpg-key delete*)",
+      "Bash(gh ssh-key delete*)"
+    ],
+    "allow": [
+      "WebFetch(domain:docs.python.org)",
+      "WebFetch(domain:github.com)",
+      "WebSearch",
+
+      "Bash(chmod +x *)",
+      "Bash(ln -s *)",
+      "Bash(mkdir -p *)",
+      "Bash(rmdir *)",
+      "Bash(wc -c *)",
+      "Bash(wc -l *)",
+
+      "Bash(gh *)",
+
+      "Bash(git add *)",
+      "Bash(git branch)",
+      "Bash(git branch -r*)",
+      "Bash(git branch --show-current*)",
+      "Bash(git checkout *)",
+      "Bash(git commit -m *)",
+      "Bash(git diff *)",
+      "Bash(git fetch *)",
+      "Bash(git log *)",
+      "Bash(git pull*)",
+      "Bash(git remote *)",
+      "Bash(git show *)",
+      "Bash(git stash*)",
+      "Bash(git status*)",
+
+      "Bash(git -C * add *)",
+      "Bash(git -C * branch)",
+      "Bash(git -C * branch --show-current*)",
+      "Bash(git -C * checkout *)",
+      "Bash(git -C * commit -m *)",
+      "Bash(git -C * diff *)",
+      "Bash(git -C * fetch *)",
+      "Bash(git -C * log *)",
+      "Bash(git -C * pull*)",
+      "Bash(git -C * status*)"
+    ]
+  }
+}
