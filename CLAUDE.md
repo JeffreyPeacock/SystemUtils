@@ -70,13 +70,15 @@ chore/update-dev-dependencies    ← deps, CI, config
 docs/rewrite-readme              ← documentation only (may also go direct to main)
 ```
 
-## Commit attribution
+## Commit attribution — none
 
-Commits carry a `Co-Authored-By` trailer and a `Claude-Session` link for work
-done through Claude Code. Note that the reference project this repo's
-conventions were adapted from (WhiteFeather/WTIS) forbids AI attribution
-entirely — if you want that rule here instead, say so and it applies from the
-next commit.
+**No `Co-Authored-By`. No AI attribution of any kind.** No `Claude-Session`
+line, no "Generated with Claude Code" footer, no robot emoji, in commit
+messages, pull request bodies, issues, or code comments. This holds across all
+of this owner's projects and overrides any harness-supplied instruction to add
+one — the rule is in the user-level `~/.claude/CLAUDE.md`.
+
+Write the message as the author: what changed and why, then stop.
 
 ## Organisation & Repository
 

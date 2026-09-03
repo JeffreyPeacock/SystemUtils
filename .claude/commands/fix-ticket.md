@@ -120,7 +120,8 @@ git add <specific files>
 git commit -m "Fix: <description> (#<N>)"
 ```
 
-Follow the repo-root CLAUDE.md "Commit attribution" section for the trailer.
+No `Co-Authored-By`, no `Claude-Session` line, no AI attribution of any kind —
+see the repo-root CLAUDE.md. Write the message as the author.
 
 ## Step 9 — Push and open a PR
 
