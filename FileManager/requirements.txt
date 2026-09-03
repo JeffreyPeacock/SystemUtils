@@ -1,0 +1,7 @@
+# Runtime dependencies: none.
+#
+# FileManager is standard-library only (hashlib, sqlite3, argparse, logging,
+# threading, concurrent.futures, queue, tkinter). Nothing here is installed by
+# `pip install -r requirements.txt` on purpose.
+#
+# Development and test tooling lives in requirements-dev.txt.

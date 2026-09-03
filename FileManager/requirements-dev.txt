@@ -1,0 +1,4 @@
+pytest>=9.1
+pytest-cov>=7.1
+coverage>=7.16
+mypy>=2.3

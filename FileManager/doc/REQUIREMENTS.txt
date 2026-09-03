@@ -1,0 +1,38 @@
+I want to create a specialize file-manager application.  It's primary usage is
+to recursively search a directory and compute the md5sum for
+each file it finds, and persist that information to a local database. This
+information is used to find, track and manage duplicate files across differrent
+files-systems.
+
+General Implemention Requirements:
+1. This app will run locally on the local system.
+2. This app will be implementated in Python 3.12.
+3. This app will use SQLite as its persistemce store.
+4. This app will provide a full featured graphical user-interface that is
+   similar to the Gnome file-manager or Windows Explorer.
+5. This app will have a CLI that will accept a finite set of directives that
+   specify specific actions to be completed independent of any graphical user
+   interface.
+6. All Python functions must have tests, and in the aggregate must provide
+   at least 95% code coverage.
+
+
+Command-line Features:
+1. Given a path to a directory, recursively scan the directory and compute the
+   md5sum for each file and store the md5sum and the path into the DB
+2. Given a path to a file, compute the md5sum and store the md5sum and the path
+   into the DB.
+3. Given a path to a file, compute its md5sum and report if the file is a
+   duplicate of a file already recorded in the DB.
+4. Given a path to a directory scan the directory, caclculate the md5sum and
+   record the md5sum file path into the DB but and report if any of the files
+   are duplicates of files already recorded in the DB.
+5. Provide an option that will display duplicates in a grapical UI, which will
+   then allows the user to delete the duplicates in bulk (all), or a selected
+   subset.
+6. Provide an option that will delete all entries in the DB that have the same
+   path prefix.
+7. Provide an option that will delete all entries in the DB that match a
+   specified regular expression (regex).
+
+

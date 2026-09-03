@@ -1,0 +1,33 @@
+# Claude Code local artifacts
+.claude_artifacts/
+.claude/settings.local.json
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Environments — pyenv-virtualenv selects the env, so .python-version is local
+.python-version
+.venv/
+venv/
+
+# Test and coverage output
+.coverage
+.coverage.*
+coverage.xml
+test-results.xml
+.pytest_cache/
+.mypy_cache/
+
+# Editors
+.idea/
+.vscode/
+
+# FileManager runtime artifacts
+*.db
+.processed_files.txt
+rm_commands.txt

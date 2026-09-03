@@ -1,0 +1,8 @@
+# Everything general is in the repo-root .gitignore. This file holds only what
+# is specific to FileManager.
+
+# Personal scan wrapper — paths are machine-specific, deliberately untracked.
+cmpdirs.sh
+
+# Copilot session transcript kept for reference, not part of the source.
+CoPilot.log
