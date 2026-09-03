@@ -173,9 +173,11 @@ one means adding it to the other.
 ## Backlog
 
 Tracked on the [SystemUtils board](https://github.com/users/JeffreyPeacock/projects/14),
-filtered by `component:file-manager`. The standing items:
+filtered by `component:file-manager` — 11 open at the time of writing, spanning
+the duplicate-reporting arithmetic, the unrunnable GUI output, the coverage gap,
+and the wrapper scripts that point at an older copy of the project.
 
-- Coverage at 29.81% against the 95% the requirements ask for
-- The `fm-*.sh` wrappers run an older copy of the project
-- `reporting.py` bypasses `db.py` and opens its own connections
-- The GUI is a paginated duplicate list, not the file manager `docs/REQUIREMENTS.txt` describes
+Two are worth reading before relying on this tool for anything destructive:
+
+- **#1** — `remove-record` matches with `re.match`, which anchors at the start of the path but not the end, so a literal `/a/b` also deletes rows for `/a/bc`
+- **#2** — `audit-db` has no dry-run, and treats an unmounted volume as a mass deletion

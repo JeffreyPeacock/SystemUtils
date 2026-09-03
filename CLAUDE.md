@@ -159,9 +159,19 @@ into each utility's `.claude/commands/`, so the root copy is the only one to edi
 | `/create-plan` | Enter plan mode for a described task |
 | `/prep-compaction` | Update CLAUDE.md, README.md, and memory files; commit and push |
 | `/trim-claude-md` | Bring a CLAUDE.md under the 40k character limit without losing anything |
+| `/export-transcript` | Render a session log as readable text with secrets masked |
 
 `board-config.md` in the same directory is not a command — it is the shared
 identifier table the commands read.
+
+## Scripts
+
+`scripts/` holds repo-level tooling; `scripts/lib/` holds what those scripts
+share. Two conventions, both pinned by the reasoning in
+`docs/Development-Principles.md`:
+
+- **Shebang ⟺ executable bit.** A script that is run has both; a file that is only ever sourced or imported (`lib/common.sh`, `lib/mask.py`) has neither. A shebang without the bit fails only on the machine where it matters (§3).
+- **One definition of what a secret looks like.** `lib/mask.py` is the sole home of the masking patterns, and the same list both masks and verifies. Two copies is how a secret leaks twice.
 
 ## Documentation hierarchy
 

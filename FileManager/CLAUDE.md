@@ -182,9 +182,15 @@ is open work.
 
 ## Backlog
 
-Tracked on the board: https://github.com/users/JeffreyPeacock/projects/14
-(filter `component:file-manager`). Known work not yet filed as issues:
+All known work is filed on the board — filter `component:file-manager`:
+https://github.com/users/JeffreyPeacock/projects/14
 
-- Coverage is 29.81% against a 95% requirement; `main.py`, `gui.py`, `reporting.py`, and `file_ops.py` are all under 20%
-- The `fm-*.sh` wrappers point at the old copy of the project
-- `src/reporting.py` opens its own SQLite connections instead of using `db.py`
+Do not keep a parallel list here. The board carries Status, Priority and Area;
+a list in this file only goes stale. `/priority-review` renders it as a
+priority-ordered table in `FileManager/docs/ticket-priority-review.md` when you
+want it at a glance.
+
+The two highest-priority items are both silent-data-loss paths worth knowing
+before you touch `db.py`: **#1** (`remove-record`'s regex is prefix-anchored, so
+`/a/b` also deletes `/a/bc`) and **#2** (`audit-db` has no dry-run, so an
+unmounted volume empties every row beneath it).

@@ -117,5 +117,5 @@ MIT — see [LICENSE](LICENSE).
 Slash commands live in `.claude/commands/` at the repo root and are symlinked
 into each utility, so the root copy is the only one to edit:
 `/new-issue`, `/fix-ticket`, `/merge-pr`, `/priority-review`, `/create-plan`,
-`/prep-compaction`, `/trim-claude-md`. Every GitHub identifier they use is
+`/prep-compaction`, `/trim-claude-md`, `/export-transcript`. Every GitHub identifier they use is
 collected in `.claude/commands/board-config.md`.
