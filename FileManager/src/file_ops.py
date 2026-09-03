@@ -5,7 +5,10 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from queue import Queue
 
-from src.db import store_file_info, check_for_duplicates, get_file_info, remove_records_by_regex
+from src.db import (
+    store_file_info, check_for_duplicates, get_file_info,
+    remove_records_by_regex, remove_record as remove_record_exact,
+)
 from src.md5sum import compute_md5
 
 
@@ -106,13 +109,39 @@ def check_file(path, db_path):
 
 def remove_record(db_path, regex_pattern):
     """
-    Remove records associated with files matching the regex pattern from the database.
+    Remove records whose path matches the regex pattern in full, and report how many.
+
+    Note this is the *regex* removal. `src/db.py` has a different function with
+    the same name that deletes one exact path; the two are told apart in #7.
 
     Args:
         db_path (str): The path to the database file.
-        regex_pattern (str): The regex pattern to match file paths.
+        regex_pattern (str): A regex matched against the whole path.
+
+    Returns:
+        int: The number of records deleted.
     """
     count = remove_records_by_regex(db_path, regex_pattern)
     print(f"{count} records matching the pattern '{regex_pattern}' have been removed from the database.")
+    return count
+
+
+def remove_record_by_path(db_path, file_path):
+    """
+    Remove the record for exactly this path, and report how many were removed.
+
+    Args:
+        db_path (str): The path to the database file.
+        file_path (str): The literal path to remove. Not a pattern.
+
+    Returns:
+        int: The number of records deleted -- 0 or 1.
+    """
+    count = remove_record_exact(db_path, file_path)
+    if count:
+        print(f"Removed the record for '{file_path}'.")
+    else:
+        print(f"No record found for '{file_path}'. Nothing removed.")
+    return count
 
 
