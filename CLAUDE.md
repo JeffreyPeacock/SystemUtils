@@ -94,8 +94,12 @@ which break queries copied from an org-owned repo:
 
 ## GitHub project management
 
-Every issue and PR carries a `component:` label, a `type:` label, and a
-`priority:pN` label.
+The board follows the house pattern set by the SAMD21-LoRa-ProRF board
+(project 11): a `Status` / `Priority` / `Area` field trio, a table view listing
+everything, and one board view per component.
+
+Every issue carries a `component:` label and a `type:` label. **Priority and Area
+are board fields, not labels** — there are no `priority:*` labels in this repo.
 
 | Label | Meaning |
 |-------|---------|
@@ -104,14 +108,26 @@ Every issue and PR carries a `component:` label, a `type:` label, and a
 | `component:ops` | Repo tooling, CI, packaging |
 | `type:bug` / `type:feature` / `type:task` | Broken / new capability / chore |
 | `type:security` / `type:docs` | Security / documentation |
-| `priority:p1` … `priority:p5` | Critical → trivial (rubric in `/priority-review`) |
 
-Board columns: **Backlog** → **Ready** → **In Progress** → **In Review** → **Done**.
+| Board field | Values |
+|-------------|--------|
+| Status | Backlog → Prioritized → Ready → In Progress → Completed |
+| Priority | p1 (highest) … p5 (lowest) |
+| Area | Scanning, Database, Reporting, GUI, Tooling, Docs |
+
+The `component:` label decides which board **view** an item appears on; `Area`
+subdivides within a component and does not affect views.
 
 `p1` is reserved for data loss or a completely broken feature. For FileManager
 that means something like *the audit deletes rows for files that still exist* —
 this tool's whole output is a list of files a human may then delete, so a wrong
 answer has consequences past the process. Do not inflate p1 for anything less.
+
+**Priority cannot be read from `gh issue list`.** In gh 2.45.0 the
+`projectItems` JSON carries only `status` and `title`, so a label-style or
+`--json labels` query returns every ticket as unprioritized without erroring.
+Anything needing Priority or Area must go through a GraphQL project query —
+`/priority-review` has the verified one.
 
 ### Querying the board efficiently
 

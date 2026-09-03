@@ -85,18 +85,32 @@ Neither is lowered to make a red build green.
 
 ## Issue tracking
 
-Work is tracked in the **SystemUtils** project board:
+Work is tracked on the **SystemUtils** board:
 https://github.com/users/JeffreyPeacock/projects/14
 
-Columns run **Backlog → Ready → In Progress → In Review → Done**. Every issue
-carries three labels: a `component:` (which utility), a `type:` (bug, feature,
-task, security, docs), and a `priority:pN` (p1 critical → p5 trivial).
+It follows the same shape as the SAMD21-LoRa-ProRF board — a `Status` /
+`Priority` / `Area` field trio, a `ListView` table showing everything, and one
+board view per component.
+
+| | |
+|---|---|
+| **Status** | Backlog → Prioritized → Ready → In Progress → Completed |
+| **Priority** | p1 (highest) … p5 (lowest) |
+| **Area** | Scanning, Database, Reporting, GUI, Tooling, Docs |
+| **Labels** | a `component:` (which utility) and a `type:` (bug, feature, task, security, docs) |
+
+Priority and Area are **board fields, not labels**. The `component:` label is
+what places an issue on the right board view.
 
 This repository is owned by a personal account rather than an organisation, so
-GitHub's custom **Issue Types** are unavailable — type is a plain label. Project
-GraphQL queries use `user(login:)`, not `organization(login:)`.
+GitHub's custom **Issue Types** are unavailable — type is a plain label, and
+project GraphQL queries use `user(login:)`, not `organization(login:)`.
 
 ---
+
+## Licence
+
+MIT — see [LICENSE](LICENSE).
 
 ## Claude Code
 

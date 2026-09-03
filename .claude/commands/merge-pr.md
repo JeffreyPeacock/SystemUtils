@@ -37,7 +37,7 @@ git checkout main && git pull
 
 Parse the PR body and title for closing keywords (`closes`, `fixes`, `resolves`) followed by `#<number>`. Also read `closingIssuesReferences` from the PR JSON fetched in Step 1. Collect all unique issue numbers.
 
-## Step 5 — Move issues to Done on the board
+## Step 5 — Move issues to Completed on the board
 
 For each closed issue number, get the project item ID **directly for this issue** — never scan the board:
 ```bash
@@ -49,7 +49,7 @@ gh api graphql -f query='
   --jq '.data.repository.issue.projectItems.nodes[] | select(.project.number==14) | .id'
 ```
 
-Set status to Done:
+Set status to Completed:
 ```bash
 gh api graphql -f query='
 mutation {
@@ -57,7 +57,7 @@ mutation {
     projectId: "PVT_kwHOAdChXs4BiTFK"
     itemId: "<item-id>"
     fieldId: "PVTSSF_lAHOAdChXs4BiTFKzhhLpVA"
-    value: { singleSelectOptionId: "c96d5cd3" }
+    value: { singleSelectOptionId: "1f45fcd1" }
   }) { projectV2Item { id } }
 }'
 ```
@@ -128,7 +128,7 @@ Run the `/priority-review` procedure for the component of each closed issue (see
 
 Summarise:
 - PR merged and branch deleted
-- Issues closed and moved to Done on the board
+- Issues closed and moved to Completed on the board
 - CLAUDE.md / README.md updated
 - Coverage floor / mypy stanzas adjusted, or confirmed still correct
 - Memory updated

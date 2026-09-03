@@ -32,7 +32,7 @@ mutation {
     projectId: "PVT_kwHOAdChXs4BiTFK"
     itemId: "<item-id>"
     fieldId: "PVTSSF_lAHOAdChXs4BiTFKzhhLpVA"
-    value: { singleSelectOptionId: "69fccd20" }
+    value: { singleSelectOptionId: "d62b377d" }
   }) { projectV2Item { id } }
 }'
 ```

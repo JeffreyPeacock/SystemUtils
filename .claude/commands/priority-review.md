@@ -5,11 +5,12 @@ Generate (or refresh) a **priority-ordered quick-review table** of the open tick
 board holds the authoritative detail; this doc is the at-a-glance *ordering by priority* the board
 doesn't give cleanly.
 
-> **Adapted for SystemUtils** from the WTIS version. Two things carry over unchanged — priority
-> lives in a **`priority:pN` label**, not a board field, and the board is queried **component-scoped
-> via `gh issue list`**, never a `projectV2` scan. One thing differs: the owner is a **user**, so any
-> project query that needs an owner uses `user(login:)`, not `organization(login:)`. Prefer the
-> issue-scoped `repository(...).issue(N).projectItems` form, which needs neither.
+> **Adapted for SystemUtils** from the WTIS version, with two changes. Priority here is a **board
+> field**, not a `priority:pN` label — WTIS's label-based query does not work and there are no such
+> labels in this repo. And the owner is a **user**, so any project query needing an owner uses
+> `user(login:)`, not `organization(login:)`; prefer the issue-scoped
+> `repository(...).issue(N).projectItems` form, which needs neither. What carries over unchanged is
+> that the ticket list is filtered to one component and capped, never rendered board-wide.
 
 ## Inputs
 - `$1` — **component** (required): `file-manager`, `cross-cutting`, `ops`, or a full
@@ -20,8 +21,7 @@ doesn't give cleanly.
 
 ## Config
 - Repo: `JeffreyPeacock/SystemUtils` · Owner: `JeffreyPeacock` (**user**) · Project number: `14`
-- **Priority** comes from the `priority:pN` label; **Status** comes from the issue's board item
-  (`projectItems[].status.name`).
+- **Priority**, **Status** and **Area** all come from the issue's board item (`projectItems[].fieldValues`).
 - Component → output directory (default filename `ticket-priority-review.md`):
 
   | component | output dir |
@@ -51,23 +51,45 @@ A 5-column table: priority+meaning in cols 1–2 (p1–p3) and cols 4–5 (p4–
    not just the date — is required so successive same-day rebuilds are distinguishable (local time,
    not UTC — this is a human-facing at-a-glance doc).
 
-2. **Pull board data** — open issues for the component; Status from the board item; priority from the
-   label (component-scoped, no full-board scan; `--jq` reads `$LABEL` from the env):
+2. **Pull board data.** Priority and Area live **only** on the board item, so this has to be a
+   GraphQL project query — `gh issue list --json projectItems` exposes just `status` and `title`
+   (verified on gh 2.45.0), and silently returns every ticket as unprioritized if you try. The
+   priority is the sort key of this whole document, so never ship a review built from that.
+
    ```bash
-   gh issue list --repo JeffreyPeacock/SystemUtils --label "$LABEL" --state open --limit 200 \
-     --json number,title,labels,projectItems \
-     --jq '.[]
-       | ((([.labels[].name]|map(select(startswith("priority:")))|.[0]) // "priority:p9") | ltrimstr("priority:")) as $pri
-       | ((.projectItems[]? | select(.status!=null) | .status.name) // "--") as $st
-       | select($st != "Done")
-       | [$pri, (.number|tostring), $st, .title] | @tsv' \
-     | LC_ALL=C sort -t$'\t' -k1,1 -k2,2n
+   LABEL="component:file-manager"
+   gh api graphql -f query='
+   query($num:Int!) { user(login:"JeffreyPeacock") { projectV2(number:$num) {
+     items(first:100) { nodes {
+       content { __typename
+         ... on Issue { number title state labels(first:20){nodes{name}} } }
+       fieldValues(first:20) { nodes {
+         ... on ProjectV2ItemFieldSingleSelectValue {
+           name field { ... on ProjectV2SingleSelectField { name } } } } }
+   } } } } }' -F num=14 --jq '
+   .data.user.projectV2.items.nodes[]
+   | select(.content.__typename=="Issue" and .content.state=="OPEN")
+   | select([.content.labels.nodes[].name] | index("'"$LABEL"'"))
+   | (.fieldValues.nodes) as $fv
+   | ( [ $fv[] | select(.field.name=="Priority") | .name ][0] // "p9" ) as $pri
+   | ( [ $fv[] | select(.field.name=="Status")   | .name ][0] // "--" ) as $st
+   | ( [ $fv[] | select(.field.name=="Area")     | .name ][0] // "--" ) as $area
+   | select($st != "Completed")
+   | [$pri, (.content.number|tostring), $st, $area, .content.title] | @tsv' \
+   | LC_ALL=C sort -t$'\t' -k1,1 -k2,2n
    ```
-   This yields rows `priority \t number \t status \t title`, sorted by priority then issue number.
-   A ticket with **no `priority:pN` label** comes back as `p9` — it **sorts last**; render it as `—` in
-   the table (and flag it: an unprioritized open ticket needs triage). `--state open` already drops
-   closed issues; `select($st != "Done")` drops any still-open ticket parked in board-Done. If it
-   returns nothing, report "no open `<LABEL>` tickets" and stop.
+
+   This yields rows `priority \t number \t status \t area \t title`, sorted by priority then issue
+   number.
+
+   This is the one query in the repo that reads the board rather than filtering at the source, and
+   that is deliberate: the field values exist nowhere else. Keep it capped at 100 items and paginate
+   with `after:` if the board ever outgrows that — do not raise the cap and hope.
+
+   A ticket with **no Priority set** comes back as `p9`, sorts last, and renders as `—`. Flag those:
+   an unprioritized open ticket needs triage, and showing it is the point. `state=="OPEN"` drops
+   closed issues; `select($st != "Completed")` drops any still-open ticket parked in board-Completed.
+   If the query returns nothing, report "no open `<LABEL>` tickets" and stop.
 
 3. **Preserve human notes.** If the target file already exists, read it and extract the **Note**
    column (last cell) keyed by issue number. In the rebuilt table, reuse each existing note for any
@@ -82,8 +104,8 @@ A 5-column table: priority+meaning in cols 1–2 (p1–p3) and cols 4–5 (p4–
    - `**Snapshot:** <DATE> · <N> open · <status mix>` where `<DATE>` is the full local-time timestamp
      from Step 1 (e.g. `2026-09-02 20:41 MDT` — date **and** time), then `<status mix>` (e.g. "all in
      Backlog", or list the spread).
-   - The ticket table — columns: `Pri | # | Status | Title | Note` — bolding the `pN` in the Pri
-     column; render the `p9`/no-priority rows as `—`.
+   - The ticket table — columns: `Pri | # | Status | Area | Title | Note` — bolding the `pN` in the
+     Pri column; render the `p9`/no-priority rows as `—`.
    - **The `#` column is a bare issue number — never a markdown link.** Write `| 12 |`, not
      `| [#12](https://github.com/JeffreyPeacock/SystemUtils/issues/12) |`. A linked cell carries ~60
      characters of URL, which blows out the `#` column, squeezes `Status` until "Backlog" wraps, and
@@ -94,15 +116,15 @@ A 5-column table: priority+meaning in cols 1–2 (p1–p3) and cols 4–5 (p4–
    - Table format:
 
      ```
-     |  Pri   |  #  | Status  | Title | Note |
-     |:------:|:---:|:-------:|-------|------|
-     | **p1** |  7  | Backlog | audit-db removes rows for files that still exist | ...
+     |  Pri   |  #  |   Status    |   Area   | Title | Note |
+     |:------:|:---:|:-----------:|:--------:|-------|------|
+     | **p1** |  7  |   Backlog   | Database | audit-db removes rows for files that still exist | ...
      ```
 
-     - `Pri`, `#`, `Status`: padded to `(longest value + 2)`, content **centred** in the cell
+     - `Pri`, `#`, `Status`, `Area`: padded to `(longest value + 2)`, content **centred** in the cell
        (`value.center(width)`), alignment colons in the separator.
      - `Title`, `Note`: one space each side, left ragged; separator is `len("Title")+2` / `len("Note")+2`.
-     - Widths come from **this component's** content — `Status` may hold `In Progress` (11) where
+     - Widths come from **this component's** content — `Status` may hold `Prioritized` (11) where
        another only reaches `Ready` (7). Never copy another component's separator verbatim.
 
      **Wrap the two long columns with `<br>` so no cell is one unbroken run.** Insert a break at
@@ -132,10 +154,11 @@ A 5-column table: priority+meaning in cols 1–2 (p1–p3) and cols 4–5 (p4–
    commit it per the docs workflow (docs → `main`) when the user asks.
 
 ## Notes
-- Open-only by design (`--state open` + excludes board-`Done`). To include closed history, use
-  `--state all` and drop the `select($st != "Done")` clause.
-- Priority is read from the **`priority:pN` label**, not a board field — keep that in sync with the
-  board (`/new-issue` and this command both treat the label as authoritative).
+- Open-only by design (`--state open` + excludes board-`Completed`). To include closed history, use
+  `--state all` and drop the `select($st != "Completed")` clause.
+- Priority is read from the board's **Priority field**. There are no `priority:*` labels in this
+  repo — do not add any, and do not fall back to reading labels when the field query returns nothing.
+  An empty Priority means the ticket needs triage, and the review's job is to show that.
 - The `Note`/rationale is **analysis**, not board data — it's the one column the board can't supply,
   which is why this skill preserves it across rebuilds rather than regenerating it blindly.
 - Priorities themselves are assessed elsewhere; this skill only *renders* whatever labels the board

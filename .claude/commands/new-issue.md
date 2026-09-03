@@ -16,7 +16,7 @@ Extract from the arguments string:
 - Anything that looks like a title (a phrase describing the issue)
 - Any `component:xxx` or component name ("file manager", "ops", "cross-cutting") → map to the correct label
 - Any `type:xxx` or type name ("bug", "chore", "feature") → map to the matching `type:` label
-- Any priority — `p1`–`p5`, or words like "critical"/"high"/"medium"/"low"/"trivial" → map to the matching `priority:pN` label
+- Any priority — `p1`–`p5`, or words like "critical"/"high"/"medium"/"low"/"trivial" → map to the matching **Priority field** value (not a label; see below)
 - Any remaining text → use as description / notes for the issue body
 
 ## Component labels
@@ -46,15 +46,15 @@ carry over.
 
 ## Priority
 
-Every issue gets exactly one `priority:pN` label. If `$ARGUMENTS` specifies a priority, use it; otherwise infer from the issue's impact using the rubric below, and surface your choice in the Step 1 confirmation so the user can correct it. When genuinely unsure, default to `priority:p3` and say so.
+Every issue gets exactly one priority. **It is a board field, not a label** — there are no `priority:*` labels in this repo. If `$ARGUMENTS` specifies a priority, use it; otherwise infer from the issue's impact using the rubric below, and surface your choice in the Step 1 confirmation so the user can correct it. When genuinely unsure, default to `p3` and say so.
 
-| Label | Meaning |
+| Value | Meaning |
 |-------|---------|
-| `priority:p1` | Critical — data loss, or a feature completely broken; fix immediately |
-| `priority:p2` | High — major functionality impaired, no acceptable workaround |
-| `priority:p3` | Medium — feature impaired but a workaround exists; schedule soon |
-| `priority:p4` | Low — minor, cosmetic, or rarely hit; batch when convenient |
-| `priority:p5` | Trivial — enhancement, barely noticeable, or deferred |
+| **p1** | Critical — data loss, or a feature completely broken; fix immediately |
+| **p2** | High — major functionality impaired, no acceptable workaround |
+| **p3** | Medium — feature impaired but a workaround exists; schedule soon |
+| **p4** | Low — minor, cosmetic, or rarely hit; batch when convenient |
+| **p5** | Trivial — enhancement, barely noticeable, or deferred |
 
 `p1` is reserved for genuine data-loss situations — do **not** inflate it. This
 tool deletes files and rewrites a database of checksums, so "p1" here means
@@ -65,11 +65,11 @@ tickets land at p3–p4.
 
 1. Confirm the parsed title, component, type, **priority**, and description with a brief summary before creating — one line is enough. If anything critical is missing, ask. Otherwise proceed without waiting.
 
-2. Create the issue:
+2. Create the issue (priority is **not** a label — it is set on the board in step 5):
 ```bash
 gh issue create --repo JeffreyPeacock/SystemUtils \
   --title "<title>" --body "<body>" \
-  --label "<component:x>" --label "priority:pN" --label "<type:x>"
+  --label "<component:x>" --label "<type:x>"
 ```
 Body should include: what the problem or feature is, why it matters, and any acceptance criteria or implementation notes from `$ARGUMENTS`.
 
@@ -78,29 +78,41 @@ Body should include: what the problem or feature is, why it matters, and any acc
 gh project item-add 14 --owner JeffreyPeacock --url <issue-url>
 ```
 
-4. Set status to **Backlog**. Get the item ID **directly for this issue** — never scan the board. Retry once after a short wait if it comes back empty (project-attachment lag):
+4. Get the project item ID **directly for this issue** — never scan the board. Retry once after a short wait if it comes back empty (project-attachment lag):
 ```bash
-gh api graphql -f query='
+ITEM_ID=$(gh api graphql -f query='
 { repository(owner:"JeffreyPeacock", name:"SystemUtils") {
     issue(number: <issue-number>) {
       projectItems(first: 5) { nodes { id project { number } } }
     } } }' \
-  --jq '.data.repository.issue.projectItems.nodes[] | select(.project.number==14) | .id'
-```
-Then set status:
-```bash
-gh api graphql -f query='
-mutation {
-  updateProjectV2ItemFieldValue(input: {
-    projectId: "PVT_kwHOAdChXs4BiTFK"
-    itemId: "<item-id>"
-    fieldId: "PVTSSF_lAHOAdChXs4BiTFKzhhLpVA"
-    value: { singleSelectOptionId: "bdbd311d" }
-  }) { projectV2Item { id } }
-}'
+  --jq '.data.repository.issue.projectItems.nodes[] | select(.project.number==14) | .id')
 ```
 
-5. **Regenerate the priority review for this component — required, not optional.**
+5. Set **Status = Backlog**, **Priority**, and **Area** on that item. Three mutations against the same item, one per field — IDs from `board-config.md`:
+```bash
+set_field() {   # set_field <field-id> <option-id>
+  gh api graphql -f query="
+  mutation {
+    updateProjectV2ItemFieldValue(input: {
+      projectId: \"PVT_kwHOAdChXs4BiTFK\"
+      itemId:    \"$ITEM_ID\"
+      fieldId:   \"$1\"
+      value: { singleSelectOptionId: \"$2\" }
+    }) { projectV2Item { id } }
+  }" --jq '.data.updateProjectV2ItemFieldValue.projectV2Item.id'
+}
+
+set_field PVTSSF_lAHOAdChXs4BiTFKzhhLpVA 0dced654    # Status   = Backlog
+set_field PVTSSF_lAHOAdChXs4BiTFKzhhLvZo <p1..p5>    # Priority
+set_field PVTSSF_lAHOAdChXs4BiTFKzhhLvZs <area>      # Area
+```
+
+Priority option IDs: p1 `ead3a951` · p2 `3fc82bbd` · p3 `42e8e40a` · p4 `be83ec7b` · p5 `3ab5822a`
+Area option IDs: Scanning `d82f5544` · Database `4aa27676` · Reporting `4a6c3afd` · GUI `1eddb0a2` · Tooling `0a403536` · Docs `f578e119`
+
+Infer the **Area** from what the issue touches and state your choice in the step 1 confirmation alongside the priority. If it genuinely spans several, leave Area unset rather than guessing.
+
+6. **Regenerate the priority review for this component — required, not optional.**
 
    The user works from the component's `ticket-priority-review.md` in an open editor tab, not from
    chat output. A ticket that is not in that file is, in practice, a ticket they cannot see.
@@ -119,6 +131,6 @@ mutation {
      file. Say so in the report and skip — do not invent a path.
    - Do **not** commit the file. It is committed per the docs workflow when the user asks.
 
-6. Report: issue number, URL, component label, priority label, type label, confirmed added to the
+7. Report: issue number, URL, component label, type label, Priority and Area set on the board, confirmed added to the
    SystemUtils project in Backlog, **and the path of the priority review you regenerated** (or why it
    was skipped).
