@@ -6,6 +6,38 @@ existed are reconstructed from the code and are marked as such.
 
 ---
 
+## Test fixtures port the shape of CaptureServer's conftest, not its contents
+
+**Problem.** `file_ops.py` and `reporting.py` sat at 14% and 16% coverage. The
+reason was not difficulty but setup cost: every test first had to build a
+database and a tree of files with known duplicate relationships, so no test got
+written. CaptureServer is the reference project and has a mature `conftest.py`,
+which made "port it" the obvious move.
+
+**Decision.** Port the *shape* — a fresh resource per test, isolated from the
+repository — and none of the contents. Roughly 120 of CaptureServer's 159
+conftest lines are `autouse` mocks for S3, Celery, FCM, email and rate
+limiters. FileManager talks to no external service, so there is nothing to
+mock and those lines would have been inert scaffolding that future readers
+assume is load-bearing.
+
+**What replaced them** is the part CaptureServer has no equivalent of: a fixture
+tree whose duplicate relationships are known in advance. Its shape is chosen,
+not incidental:
+
+- `left/` and `right/` hold three byte-identical pairs **and** one unique file each, so a query has something to find *and* something it must correctly ignore. A fixture with only duplicates cannot catch a query that returns everything.
+- One pair is named `with,comma.txt`, so any test of the group queries also exercises the `GROUP_CONCAT` splitting defect (#5) without a second fixture. That test is a **strict xfail**: it fails when the bug is fixed, which is what stops the fixture and the fix drifting apart.
+- `volatile/` carries one file that changes size and one that changes only mtime, because `process_file`'s skip check compares both and the two take different branches.
+
+**Ruled out.** Reusing `test_data/data` and `test_data/duplicate_data`, which is
+what the original tests did. Those are a fixed, committed pair, so a test
+needing a third copy or a mutated file has to write into the repository — which
+is exactly what the old tests did, leaving `test.db` in the working tree.
+
+**Related issues:** #12, and #5 for the xfail.
+
+---
+
 ## The database is a cache, not just a result
 
 **Problem.** The tool exists to be run repeatedly over the same multi-terabyte

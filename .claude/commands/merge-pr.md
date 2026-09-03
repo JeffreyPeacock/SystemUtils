@@ -6,9 +6,13 @@ Identifiers come from `board-config.md` in this directory.
 
 If `$ARGUMENTS` contains a PR number, use it. Otherwise infer from the current branch:
 ```bash
-gh pr view --json number,title,body,statusCheckRollup,closingIssuesReferences
+gh pr view --json number,title,body,statusCheckRollup
 ```
 If no PR is found, report and stop.
+
+**Do not add `closingIssuesReferences` to that list.** gh 2.45.0 rejects it as an
+unknown field and the whole call fails, taking the CI check with it. Closing
+issues are parsed out of the PR body in Step 4 instead.
 
 ## Step 1 — Verify CI
 
@@ -35,7 +39,17 @@ git checkout main && git pull
 
 ## Step 4 — Identify closed issues
 
-Parse the PR body and title for closing keywords (`closes`, `fixes`, `resolves`) followed by `#<number>`. Also read `closingIssuesReferences` from the PR JSON fetched in Step 1. Collect all unique issue numbers.
+Parse the PR body and title for closing keywords (`closes`, `fixes`, `resolves`) followed by `#<number>`, and collect the unique issue numbers:
+
+```bash
+gh pr view <PR> --json body --jq '.body' \
+  | grep -ioE '\b(close[sd]?|fixe?[sd]?|resolve[sd]?) +#[0-9]+' \
+  | grep -oE '[0-9]+' | sort -un
+```
+
+If that finds nothing, **say so and stop** rather than merging housekeeping for
+an empty set — a PR that closes no issue is either mislabelled or the body lost
+its keyword.
 
 ## Step 5 — Move issues to Completed on the board
 
