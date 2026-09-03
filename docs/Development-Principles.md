@@ -28,7 +28,7 @@ the foundation first. Promote such work to p1 *with intent*, and note **why** it
 not fire) so the rationale is visible to whoever triages next.
 
 **Example in this repo:** the test suite could not even be collected — two modules imported names
-that do not exist — while `doc/REQUIREMENTS.txt` asked for 95% coverage. Writing new tests against a
+that do not exist — while `FileManager/docs/REQUIREMENTS.txt` asked for 95% coverage. Writing new tests against a
 suite that would not run was pointless; repairing collection came first, and it was cheap precisely
 because nothing had been built on top of the broken state yet.
 
@@ -98,7 +98,7 @@ stanza in the same PR. Neither value is ever lowered to make a red build green.
 
 1. **A floor that can be lowered measures nothing.** If the response to a failing gate is to move the
    gate, the gate has no information content — it only records the last time someone was in a hurry.
-2. **The ratchet is what converts intent into progress.** `doc/REQUIREMENTS.txt` has asked for 95%
+2. **The ratchet is what converts intent into progress.** `FileManager/docs/REQUIREMENTS.txt` has asked for 95%
    coverage since 2024 and the code sits at 29.81%. An aspiration in a document changes nothing; a
    number that cannot go down turns each PR into a small, permanent gain.
 3. **It makes the gap honest.** A floor set at the real measurement states the distance to the goal
@@ -112,5 +112,5 @@ deleting well-tested code, say — lower the floor **only** with a one-line comm
 saying which change did it and why.
 
 **Example in this repo:** the floor was set to 29 against a measured 29.81% rather than to the 95%
-that `doc/REQUIREMENTS.txt` demands. 95% would have failed on the first run and been switched off
+that `FileManager/docs/REQUIREMENTS.txt` demands. 95% would have failed on the first run and been switched off
 within a week; 29 fails the moment anything regresses, and every test written from here moves it up.

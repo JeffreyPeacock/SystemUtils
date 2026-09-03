@@ -16,14 +16,14 @@ For every bug fix or feature:
 ## Repository layout
 
 This repository is a container for small, independent system utilities. Each is
-a subdirectory with its own `CLAUDE.md`, `README.md`, `doc/`, and test suite.
+a subdirectory with its own `CLAUDE.md`, `README.md`, `docs/`, and test suite.
 
 | Directory | Language | Purpose |
 |-----------|----------|---------|
 | `FileManager/` | Python | MD5-based duplicate-file finder over SQLite: scans filesystems, records checksums, reports duplicates across mount points |
 
 The repo root holds only shared machinery: this file, `README.md`,
-`doc/Development-Principles.md`, `.claude/`, and `.gitignore`.
+`docs/Development-Principles.md`, `.claude/`, and `.gitignore`.
 
 **Orientation.** The repo root is `~/Workspace/JeffreyPeacock.com/SystemUtils`;
 confirm with `git rev-parse --show-toplevel`. Git paths therefore carry the
@@ -149,6 +149,6 @@ identifier table the commands read.
 
 ## Documentation hierarchy
 
-**`CLAUDE.md`** = operational reference: commands, config, non-obvious constraints, gotchas. **Target <34k chars, hard limit 40k.** · **`README.md`** = new-developer orientation · **`doc/Architecture+Design.md`** = design decisions (problem / decision / alternatives rejected) · **`doc/<Subject>.md`** = deep dive · repo-root **`doc/Development-Principles.md`** = durable lessons about how to build and sequence work.
+**`CLAUDE.md`** = operational reference: commands, config, non-obvious constraints, gotchas. **Target <34k chars, hard limit 40k.** · **`README.md`** = new-developer orientation · **`<Utility>/docs/Architecture+Design.md`** = design decisions (problem / decision / alternatives rejected) · **`<Utility>/docs/<Subject>.md`** = deep dive · repo-root **`docs/Development-Principles.md`** = durable lessons about how to build and sequence work.
 
 **When trimming, assign every removed item to one of those *before* deleting it** — unless it is already elsewhere (note where) or pure PR attribution.

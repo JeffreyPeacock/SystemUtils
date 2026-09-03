@@ -26,10 +26,10 @@ Before deleting any content, assign it to one of these destinations:
 
 | Content type | Destination |
 |-------------|-------------|
-| New-developer orientation, workflow, operational procedure | `README.md` (or a linked `doc/<Subject>.md` if too long for README) |
-| Design decision — problem, decision, alternatives rejected | `doc/Architecture+Design.md` |
-| Deep technical reference — too long for README, too important to lose | New `doc/<Subject>.md`, linked from the relevant README section with intro prose |
-| A durable lesson about how to build or sequence work | repo-root `doc/Development-Principles.md` |
+| New-developer orientation, workflow, operational procedure | `README.md` (or a linked `../../docs/<Subject>.md` if too long for README) |
+| Design decision — problem, decision, alternatives rejected | `FileManager/docs/Architecture+Design.md` |
+| Deep technical reference — too long for README, too important to lose | New `../../docs/<Subject>.md`, linked from the relevant README section with intro prose |
+| A durable lesson about how to build or sequence work | repo-root `docs/Development-Principles.md` |
 | Already documented in README or A+D | Safe to drop — note where it lives |
 | Pure PR attribution / historical narrative | Safe to drop — belongs in commit messages, not living docs |
 
@@ -64,8 +64,8 @@ If on `main`, stage only the files updated in this command (never `git add .` or
 
 ```bash
 git add FileManager/CLAUDE.md FileManager/README.md
-# plus CLAUDE.md / README.md at the repo root, and any doc/ files touched:
-git add doc/Development-Principles.md FileManager/doc/Architecture+Design.md   # as applicable
+# plus CLAUDE.md / README.md at the repo root, and any docs/ files touched:
+git add docs/Development-Principles.md FileManager/docs/Architecture+Design.md   # as applicable
 git commit -m "Docs: <concise summary of what changed>"
 git push origin main
 ```

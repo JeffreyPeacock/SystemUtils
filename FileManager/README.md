@@ -14,9 +14,9 @@ Part of [SystemUtils](../README.md). Standard-library Python only.
 |------|---------|
 | `README.md` (this file) | New-developer orientation — what it does, how to run it, how it works |
 | `CLAUDE.md` | Operational reference for Claude Code: commands, invariants, gotchas |
-| [`doc/Architecture+Design.md`](doc/Architecture+Design.md) | Design decision record — problem, decision, alternatives rejected |
-| [`doc/REQUIREMENTS.txt`](doc/REQUIREMENTS.txt) | The original 2024 specification, kept as written |
-| [`../doc/Development-Principles.md`](../doc/Development-Principles.md) | Repo-wide principles on building and sequencing work |
+| [`docs/Architecture+Design.md`](docs/Architecture+Design.md) | Design decision record — problem, decision, alternatives rejected |
+| [`docs/REQUIREMENTS.txt`](docs/REQUIREMENTS.txt) | The original 2024 specification, kept as written |
+| [`../docs/Development-Principles.md`](../docs/Development-Principles.md) | Repo-wide principles on building and sequencing work |
 
 ---
 
@@ -151,7 +151,7 @@ python -m mypy src/           # must be clean
 
 21 tests in 4 modules. `pytest.ini` enables branch coverage, writes
 `coverage.xml` and `test-results.xml`, and fails under **29%** — the current real
-measurement is 29.81%. `doc/REQUIREMENTS.txt` asks for 95%; the gap is the main
+measurement is 29.81%. `docs/REQUIREMENTS.txt` asks for 95%; the gap is the main
 open work on this project. Coverage is concentrated in `md5sum.py` (100%) and
 `db.py` (59%); `main.py`, `gui.py`, `reporting.py`, and `file_ops.py` are all
 under 20%.
@@ -159,7 +159,7 @@ under 20%.
 The floor **only moves up** — raise it in the same PR that raises real coverage.
 Same for the per-module opt-outs in `mypy.ini`: a module leaves the list by being
 annotated, not by loosening the defaults. See
-[Development-Principles §4](../doc/Development-Principles.md).
+[Development-Principles §4](../docs/Development-Principles.md).
 
 ### Fixtures
 
@@ -178,4 +178,4 @@ filtered by `component:file-manager`. The standing items:
 - Coverage at 29.81% against the 95% the requirements ask for
 - The `fm-*.sh` wrappers run an older copy of the project
 - `reporting.py` bypasses `db.py` and opens its own connections
-- The GUI is a paginated duplicate list, not the file manager `doc/REQUIREMENTS.txt` describes
+- The GUI is a paginated duplicate list, not the file manager `docs/REQUIREMENTS.txt` describes

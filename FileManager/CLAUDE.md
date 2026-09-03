@@ -7,7 +7,7 @@ Repo-wide workflow, branch naming, and board configuration are in the
 
 ## Documentation Hierarchy
 
-**`CLAUDE.md`** (this file) = operational reference: commands, config, non-obvious constraints, gotchas. **Target <34k chars, hard limit 40k.** · **`README.md`** = new-developer orientation · **`doc/Architecture+Design.md`** = design decisions (problem / decision / alternatives rejected) · **`doc/REQUIREMENTS.txt`** = the original 2024 specification · repo-root **`doc/Development-Principles.md`** = durable lessons about building and sequencing.
+**`CLAUDE.md`** (this file) = operational reference: commands, config, non-obvious constraints, gotchas. **Target <34k chars, hard limit 40k.** · **`README.md`** = new-developer orientation · **`docs/Architecture+Design.md`** = design decisions (problem / decision / alternatives rejected) · **`docs/REQUIREMENTS.txt`** = the original 2024 specification · repo-root **`docs/Development-Principles.md`** = durable lessons about building and sequencing.
 
 **When trimming, assign every removed item to one of those *before* deleting it.**
 
@@ -20,7 +20,7 @@ points. Its output is a list of files a human may then delete — a wrong answer
 has consequences past this process, which is what makes the correctness notes
 below worth reading before changing anything.
 
-`doc/REQUIREMENTS.txt` is the original specification. Two of its requirements are
+`docs/REQUIREMENTS.txt` is the original specification. Two of its requirements are
 **not met**: the "full featured graphical user-interface" (only a paginated
 Tkinter duplicate list exists) and 95% coverage (actual: 29.81%).
 
@@ -84,7 +84,7 @@ Current coverage by module — `md5sum` is the only well-covered one:
 **The floor is a ratchet — it only goes up.** Raise `--cov-fail-under` in the
 same PR that raises real coverage; never lower it to make a red build green.
 Same rule for the per-module opt-out stanzas in `mypy.ini`: a module leaves that
-list by being annotated. Reasoning in repo-root `doc/Development-Principles.md` §4.
+list by being annotated. Reasoning in repo-root `docs/Development-Principles.md` §4.
 
 Fixtures live in `test_data/`. `data/` and `duplicate_data/` are a
 **byte-identical pair, file for file** — that pairing is the duplicate-detection

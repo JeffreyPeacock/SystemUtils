@@ -14,10 +14,10 @@ conventions they are all built to.
 |------|---------|
 | `README.md` (this file) | Orientation for the repository as a whole — setup, conventions, where things live |
 | `CLAUDE.md` | Operational reference for Claude Code: workflow, branch naming, board configuration, gotchas |
-| [`doc/Development-Principles.md`](doc/Development-Principles.md) | Durable lessons about how work is built and sequenced here — foundation-first prioritisation, recording a run's configuration, testing what review cannot see, and the quality ratchet |
+| [`docs/Development-Principles.md`](docs/Development-Principles.md) | Durable lessons about how work is built and sequenced here — foundation-first prioritisation, recording a run's configuration, testing what review cannot see, and the quality ratchet |
 | `<Utility>/README.md` | New-developer orientation for one utility |
 | `<Utility>/CLAUDE.md` | Operational reference for one utility |
-| `<Utility>/doc/Architecture+Design.md` | Design decision record: problem, decision, alternatives rejected |
+| `<Utility>/docs/Architecture+Design.md` | Design decision record: problem, decision, alternatives rejected |
 
 ---
 
@@ -74,9 +74,9 @@ to `main`.
 ### Quality ratchets
 
 Two numbers in this repo only ever move up, and the reasoning is in
-[Development-Principles §4](doc/Development-Principles.md):
+[Development-Principles §4](docs/Development-Principles.md):
 
-- **`FileManager/pytest.ini` → `--cov-fail-under`.** Currently `29`, against a measured 29.81%. `FileManager/doc/REQUIREMENTS.txt` asks for 95%. Raise the floor in the same PR that raises real coverage.
+- **`FileManager/pytest.ini` → `--cov-fail-under`.** Currently `29`, against a measured 29.81%. `FileManager/docs/REQUIREMENTS.txt` asks for 95%. Raise the floor in the same PR that raises real coverage.
 - **`FileManager/mypy.ini` → the per-module opt-out stanzas.** A module leaves the list by being annotated, never by the defaults being loosened.
 
 Neither is lowered to make a red build green.

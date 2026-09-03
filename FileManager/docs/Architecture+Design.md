@@ -82,7 +82,7 @@ than a tool with one table needs.
 
 ## The GUI writes `rm_commands.txt` instead of deleting
 
-**Problem.** `doc/REQUIREMENTS.txt` §5 asks for a UI that "allows the user to
+**Problem.** `/REQUIREMENTS.txt` §5 asks for a UI that "allows the user to
 delete the duplicates in bulk (all), or a selected subset". Deleting files from
 inside a duplicate browser, driven by checkboxes over a paginated list, puts an
 irreversible operation one misclick away.
@@ -104,7 +104,7 @@ is right; the implementation is broken.
 
 ## The coverage floor is set to the measurement, not to the requirement
 
-**Problem.** `doc/REQUIREMENTS.txt` has required 95% coverage since 2024. Real
+**Problem.** `/REQUIREMENTS.txt` has required 95% coverage since 2024. Real
 coverage is 29.81%. Enforcing 95% in `pytest.ini` would fail every run from the
 first one.
 
@@ -121,4 +121,4 @@ written from here moves it closer to the requirement.
 floor, with extra ceremony. Setting no floor at all — coverage then silently
 decays, which is exactly what produced the 29.81%.
 
-**Related:** repo-root `doc/Development-Principles.md` §4.
+**Related:** repo-root `/Development-Principles.md` §4.

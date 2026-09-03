@@ -96,7 +96,7 @@ proves coverage did not regress. All tests must pass before proceeding.
 
 **If your change raised coverage, raise the floor in the same PR.** The
 `--cov-fail-under` value in `pytest.ini` is a ratchet toward the 95% that
-`doc/REQUIREMENTS.txt` demands — it only ever goes up. Set it to the new whole
+`FileManager/docs/REQUIREMENTS.txt` demands — it only ever goes up. Set it to the new whole
 number at or just below what the run reports.
 
 ## Step 7 — Run mypy

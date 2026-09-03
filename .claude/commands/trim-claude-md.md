@@ -19,7 +19,7 @@ Read the full `CLAUDE.md`. For every candidate passage to remove, classify it in
 | **Delete** | One-time setup notes for completed actions; boilerplate derivable from the code | Remove — no preservation needed |
 | **Save to memory** | "Why" explanations, historical incidents, non-obvious decisions, constraints that shaped current code | Write or update a memory file first, then remove |
 | **Move to README** | User-facing design rationale or architectural explanation not already in README | Add a concise version to README.md first, then remove |
-| **Move to a principle** | A durable, reusable lesson about how to build or sequence work — not specific to one file | Add to repo-root `doc/Development-Principles.md` first, then remove |
+| **Move to a principle** | A durable, reusable lesson about how to build or sequence work — not specific to one file | Add to repo-root `docs/Development-Principles.md` first, then remove |
 
 Sections that must **never** be cut:
 - The schema and the `--db-path` resolution rule
@@ -38,7 +38,7 @@ Do this **before** editing CLAUDE.md:
 
 - **Memory items:** write or update the relevant file in the project's memory directory. Update `MEMORY.md` if creating a new file.
 - **README items:** add the content to `README.md` in the appropriate section. Do not duplicate — one canonical location per fact.
-- **Principles:** add a numbered entry to `doc/Development-Principles.md`, with the *why* and a concrete example, in the style of the existing entries.
+- **Principles:** add a numbered entry to `../../docs/Development-Principles.md`, with the *why* and a concrete example, in the style of the existing entries.
 
 ## Step 4 — Apply edits to CLAUDE.md
 

@@ -72,7 +72,7 @@ Read both files first, make targeted edits only. Do not rewrite unaffected secti
 
 Check whether any closed issue has a `## Design Decision` section in its body, or whether the PR implemented an approach that was non-obvious or chosen over alternatives.
 
-If yes, add a narrative entry to `FileManager/doc/Architecture+Design.md`:
+If yes, add a narrative entry to `FileManager/docs/Architecture+Design.md`:
 - Open with the problem being solved
 - State the decision and why it was chosen
 - Note what was ruled out, if applicable
@@ -110,7 +110,7 @@ git push
 
 If multiple issues were closed, list them all: `"Docs: mark #X, #Y done (PR #<PR>)"`.
 
-Include `FileManager/doc/Architecture+Design.md`, `FileManager/pytest.ini`, or `FileManager/mypy.ini` in the same commit if Steps 7 or 8 changed them.
+Include `FileManager/docs/Architecture+Design.md`, `FileManager/pytest.ini`, or `FileManager/mypy.ini` in the same commit if Steps 7 or 8 changed them.
 
 ## Step 11 — Regenerate the priority review — required, not optional
 
@@ -122,7 +122,7 @@ Run the `/priority-review` procedure for the component of each closed issue (see
 - **Preserve every remaining Note verbatim.** Never regenerate or reword a human-written Note.
 - If a merged ticket's Note recorded something still true of the code — a sequencing constraint, a correction to another ticket's body — carry that fact onto the ticket it now applies to rather than deleting it with the row.
 - Components with no mapped doc path (`cross-cutting`, `ops`) have no review file: say so and skip, never invent a path.
-- Commit the review **with** the docs commit in Step 10 (`git add FileManager/doc/ticket-priority-review.md`) — unlike `/new-issue`, this command already commits, so the review rides along.
+- Commit the review **with** the docs commit in Step 10 (`git add FileManager/docs/ticket-priority-review.md`) — unlike `/new-issue`, this command already commits, so the review rides along.
 
 ## Step 12 — Report
 

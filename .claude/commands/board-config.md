@@ -46,7 +46,7 @@ carried by a **label** instead:
 
 | Component | Label | Docs directory |
 |-----------|-------|----------------|
-| FileManager | `component:file-manager` | `FileManager/doc` |
+| FileManager | `component:file-manager` | `FileManager/docs` |
 | Touches more than one utility | `component:cross-cutting` | *(unmapped — ask)* |
 | Repo tooling, CI, packaging | `component:ops` | *(unmapped — ask)* |
 

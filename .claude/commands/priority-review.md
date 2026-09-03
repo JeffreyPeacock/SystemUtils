@@ -26,7 +26,7 @@ doesn't give cleanly.
 
   | component | output dir |
   |---|---|
-  | `file-manager` | `FileManager/doc` |
+  | `file-manager` | `FileManager/docs` |
   | `cross-cutting` / `ops` / *(unmapped)* | ask for the path, or use `$2` |
 
 ## Priority rubric (include verbatim in the output — render as this 2-up table)
