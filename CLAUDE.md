@@ -168,7 +168,8 @@ into each utility's `.claude/commands/`, so the root copy is the only one to edi
 |---------|-------------|
 | `/new-issue` | Create a GitHub issue, label it, add it to the board in Backlog, regenerate the priority review |
 | `/fix-ticket` | Fix an issue end-to-end: board → branch → fix → tests → mypy → PR → CI |
-| `/merge-pr` | Verify CI, squash-merge, move issues to Done, update docs and the ratchets |
+| `/merge-pr` | Verify CI, squash-merge, move issues to Completed, update docs and the ratchets |
+| `/fix-ready` | Drain the Ready column — groups entangled tickets into one branch+PR, foundation-first |
 | `/priority-review` | Rebuild a component's priority-ordered ticket table |
 | `/create-plan` | Enter plan mode for a described task |
 | `/prep-compaction` | Update CLAUDE.md, README.md, and memory files; commit and push |
