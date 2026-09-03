@@ -1,4 +1,5 @@
 import os
+import re
 import shutil
 import sqlite3
 import tempfile
@@ -180,3 +181,70 @@ def test_skip_check_sees_an_mtime_only_change(db_path, dup_tree):
 
 if __name__ == '__main__':
     unittest.main()
+
+# ---------------------------------------------------------------------------
+# #1 -- removal must not reach past the path it was given.
+#
+# remove_records_by_regex used re.match, which anchors the start of the string
+# and not the end, so the literal path /a/b also deleted /a/bc and everything
+# under /a/b-old/. Nothing in a diff shows that; only a test does.
+# ---------------------------------------------------------------------------
+
+
+def _record(db, path):
+    store_file_info(db, str(path), compute_md5(str(path)))
+
+
+def _paths(db):
+    return {row[0] for row in get_all_files_info(db)}
+
+
+def test_exact_removal_leaves_sibling_prefixes_alone(db_path, dup_tree):
+    """The case from #1: removing /a/b must not touch /a/bc."""
+    target = dup_tree.left / "unique-left.txt"
+    sibling = dup_tree.left / "unique-left.txt.bak"
+    sibling.write_bytes(b"a different file whose path starts with the target's\n")
+    _record(db_path, target)
+    _record(db_path, sibling)
+
+    removed = remove_record(db_path, str(target))
+
+    assert removed == 1
+    assert _paths(db_path) == {str(sibling)}
+
+
+def test_regex_removal_is_anchored_at_both_ends(db_path, dup_tree):
+    """The same guarantee through the regex path: fullmatch, not match."""
+    target = dup_tree.left / "unique-left.txt"
+    sibling = dup_tree.left / "unique-left.txt.bak"
+    sibling.write_bytes(b"a different file whose path starts with the target's\n")
+    _record(db_path, target)
+    _record(db_path, sibling)
+
+    removed = remove_records_by_regex(db_path, re.escape(str(target)))
+
+    assert removed == 1
+    assert _paths(db_path) == {str(sibling)}
+
+
+def test_regex_removal_can_still_take_a_subtree_when_asked(db_path, dup_tree):
+    """Deleting a subtree stays possible -- it just has to be explicit."""
+    for path in (dup_tree.left / "unique-left.txt", *dup_tree.duplicated[0]):
+        _record(db_path, path)
+    survivor = dup_tree.right / "unique-right.txt"
+    _record(db_path, survivor)
+
+    removed = remove_records_by_regex(db_path, re.escape(str(dup_tree.left)) + "/.*")
+
+    assert removed == 2  # unique-left.txt and left/shared-one.txt
+    assert _paths(db_path) == {str(dup_tree.duplicated[0][1]), str(survivor)}
+
+
+def test_exact_removal_of_an_absent_path_removes_nothing(db_path, dup_tree):
+    kept = dup_tree.left / "unique-left.txt"
+    _record(db_path, kept)
+
+    removed = remove_record(db_path, str(dup_tree.left / "never-recorded.txt"))
+
+    assert removed == 0
+    assert _paths(db_path) == {str(kept)}

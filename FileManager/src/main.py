@@ -9,7 +9,10 @@ sys.path.append(
 import logging
 import argparse
 from src.db import initialize_db, audit_db, get_file_info, scan_and_report_unique_files
-from src.file_ops import scan, check_file, process_file, remove_record, remove_records_by_regex
+from src.file_ops import (
+    scan, check_file, process_file, remove_record, remove_record_by_path,
+    remove_records_by_regex,
+)
 from src.reporting import (
     scan_dir_report, report_duplicates, report_duplicate_sizes,
     report_prefix_count, compare_directories
@@ -29,7 +32,7 @@ def usage():
     Usage:
         main.py <action> <path> [--db-path <db_path>] [--threads <num_threads>]
         [--prefix <prefix>] [--dirA <dirA>] [--dirB <dirB>] [--use-gui] [--min-duplicates <min_duplicates>]
-        [--exclude-prefix <exclude_prefix>]
+        [--exclude-prefix <exclude_prefix>] [--regex]
 
     Actions:
         scan                Scan a comma-separated list of directories or files.
@@ -39,8 +42,9 @@ def usage():
         audit-db            Audit the database for file changes.
         report-duplicate-sizes Report the total size of duplicate files.
         report-prefix-count Report the number of files that match a given prefix.
-        remove-record       Remove the record associated with the specified path
-                            from the database.
+        remove-record       Remove the record for exactly the specified path.
+                            With --regex, <path> is instead a regular expression
+                            matched against the WHOLE path.
         compare-directories Compare two directories and report unique files.
         get-file-info       Get information of a file from the database.
         scan-unique-files   Scan a directory and report unique files.
@@ -58,6 +62,8 @@ def usage():
         --use-gui           Use GUI for displaying duplicates.
         --min-duplicates    Minimum number of duplicates to search for (default: 1).
         --exclude-prefix    Comma-separated list of prefixes to exclude paths from processing during audit-db.
+        --regex             Treat remove-record's <path> as a regex matched against
+                            the whole path. Without it the path is taken literally.
 
     Examples:
         python main.py scan /path/to/dir1,/path/to/dir2 --db-path /path/to/db --threads 4
@@ -68,6 +74,7 @@ def usage():
         python main.py report-duplicate-sizes --db-path /path/to/db
         python main.py report-prefix-count --db-path /path/to/db --prefix <prefix>
         python main.py remove-record /path/to/file --db-path /path/to/db
+        python main.py remove-record '/path/to/dir/.*' --regex --db-path /path/to/db
         python main.py compare-directories --dirA /path/to/dirA --dirB /path/to/dirB
         python main.py get-file-info /path/to/file --db-path /path/to/db
         python main.py scan-unique-files /path/to/dir --db-path /path/to/db
@@ -121,6 +128,10 @@ def main():
     parser.add_argument(
         '--use-gui', action='store_true',
         help='Use GUI for displaying duplicates'
+    )
+    parser.add_argument(
+        '--regex', action='store_true',
+        help="Treat remove-record's path as a regex matched against the whole path"
     )
     # Add the --exclude-prefix argument to the parser
     parser.add_argument(
@@ -196,7 +207,13 @@ def main():
     elif args.action == 'report-prefix-count':
         report_prefix_count(db_path, args.prefix)
     elif args.action == 'remove-record':
-        remove_record(db_path, args.path)
+        # Literal by default. The regex form is opt-in because this action's
+        # argument looks like a path, and a path silently interpreted as a
+        # pattern is how #1 deleted siblings.
+        if args.regex:
+            remove_record(db_path, args.path)
+        else:
+            remove_record_by_path(db_path, args.path)
     elif args.action == 'compare-directories':
         compare_directories(args.dirA, args.dirB)
     elif args.action == 'get-file-info':

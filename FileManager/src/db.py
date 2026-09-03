@@ -108,18 +108,23 @@ def store_file_info(db_path, path, md5sum):
 
 def remove_record(db_path, file_path):
     """
-    Remove the information of a file from the database.
+    Remove the information of a file from the database, matching the path exactly.
 
     Args:
         db_path (str): The path to the database file.
         file_path (str): The path to the file.
+
+    Returns:
+        int: The number of records deleted -- 0 or 1, since path is UNIQUE.
     """
     retries = MAX_RETRIES
+    deleted_count = 0
     while retries > 0:
         try:
             conn = sqlite3.connect(db_path)
             cursor = conn.cursor()
             cursor.execute("DELETE FROM files WHERE path = ?", (file_path,))
+            deleted_count = cursor.rowcount
             conn.commit()
             conn.close()
             break
@@ -134,11 +139,18 @@ def remove_record(db_path, file_path):
                 conn.close()
     if retries == 0:
         raise Exception(f"Failed to remove file info for {file_path} after {MAX_RETRIES} retries due to database lock")
+    return deleted_count
 
 
 def remove_records_by_regex(db_path, regex_pattern):
     """
-    Remove records associated with files matching the regex pattern from the database.
+    Remove records whose path matches the regex pattern, in full.
+
+    The match is `re.fullmatch`, so the pattern must describe the WHOLE path.
+    This used to be `re.match`, which anchors at the start of the string but
+    not at the end -- so the literal path `/a/b` also deleted `/a/bc` and
+    everything under `/a/b-old/`, silently (#1). To delete a subtree, say so
+    explicitly: `/a/b/.*`.
 
     Args:
         db_path (str): The path to the database file.
@@ -155,7 +167,7 @@ def remove_records_by_regex(db_path, regex_pattern):
             cursor = conn.cursor()
             cursor.execute("SELECT path FROM files")
             all_paths = cursor.fetchall()
-            matching_paths = [path[0] for path in all_paths if re.match(regex_pattern, path[0])]
+            matching_paths = [path[0] for path in all_paths if re.fullmatch(regex_pattern, path[0])]
             deleted_count = len(matching_paths)
             if matching_paths:
                 cursor.executemany("DELETE FROM files WHERE path = ?", [(path,) for path in matching_paths])
