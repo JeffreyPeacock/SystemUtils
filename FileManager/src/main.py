@@ -113,6 +113,16 @@ def get_file_info_action(db_path, file_path):
         print(f"No information found for file: {file_path}")
 
 def main():
+    """Run one CLI action.
+
+    Returns:
+        int: 0 on success, 1 when an argument is missing or invalid, 2 when
+            argparse itself rejected the command line. `main.py` used to
+            `return` from every one of these branches, which exits 0 -- so an
+            invalid invocation was indistinguishable from success to any caller
+            checking $?, including the fm-*.sh wrappers running under set -e
+            (#23).
+    """
     parser = argparse.ArgumentParser(
         description='File Manager Application', add_help=False
     )
@@ -173,26 +183,26 @@ def main():
         args = parser.parse_args()
     except SystemExit:
         usage()
-        return
+        return 2
 
     if args.action == 'help':
         usage()
-        return
+        return 0
 
     if args.action in ['scan', 'check-file', 'scan-dir-report', 'remove-record', 'get-file-info'] and not args.path:
         print("Error: <path> argument is required for this action")
         usage()
-        return
+        return 1
 
     if args.action == 'report-prefix-count' and not args.prefix:
         print("Error: --prefix argument is required for report-prefix-count action")
         usage()
-        return
+        return 1
 
     if args.action == 'compare-directories' and (not args.dirA or not args.dirB):
         print("Error: --dirA and --dirB arguments are required for compare-directories action")
         usage()
-        return
+        return 1
 
     db_path = args.db_path if args.db_path else 'file_manager.db'
     if os.path.isdir(db_path):
@@ -270,12 +280,15 @@ def main():
         if not args.prefix:
             print("Error: --prefix argument is required for report-files-for-prefix action")
             usage()
-            return
+            return 1
         from src.reporting import report_files_for_prefix
         files = report_files_for_prefix(db_path, args.prefix)
         print(f"Files with prefix '{args.prefix}':")
         for f in files:
             print(f)
 
+    return 0
+
+
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

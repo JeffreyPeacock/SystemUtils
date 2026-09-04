@@ -15,20 +15,17 @@ import pytest
 
 
 def test_help_action_prints_usage(run_cli):
+    """help is a successful invocation, so it must still exit 0."""
     result = run_cli("help")
     assert result.exit_code == 0
     assert "File Manager Application" in result
     assert "remove-record" in result
 
 
-@pytest.mark.xfail(
-    reason="#23 -- main() swallows argparse's SystemExit and returns, so the "
-           "process exits 0 and no caller can detect a bad invocation",
-    strict=True,
-)
 def test_unknown_action_is_rejected(run_cli):
+    """#23: argparse's own rejection exits 2, the conventional usage-error code."""
     result = run_cli("not-an-action")
-    assert result.exit_code != 0
+    assert result.exit_code == 2
 
 
 # -- the validation branches ----------------------------------------------
@@ -37,25 +34,29 @@ def test_unknown_action_is_rejected(run_cli):
 @pytest.mark.parametrize("action", ["scan", "check-file", "scan-dir-report",
                                     "remove-record", "get-file-info"])
 def test_actions_requiring_a_path_say_so(run_cli, action):
-    """Each of these returns early with a message rather than crashing."""
+    """Each returns early with a message AND a non-zero code (#23)."""
     result = run_cli(action)
     assert "<path> argument is required" in result
+    assert result.exit_code == 1
 
 
 def test_report_prefix_count_requires_prefix(run_cli, db_path):
     result = run_cli("report-prefix-count", "--db-path", db_path)
     assert "--prefix argument is required" in result
+    assert result.exit_code == 1
 
 
 def test_report_files_for_prefix_requires_prefix(run_cli, db_path):
     result = run_cli("report-files-for-prefix", "--db-path", db_path)
     assert "--prefix argument is required" in result
+    assert result.exit_code == 1
 
 
 @pytest.mark.parametrize("extra", [[], ["--dirA", "/tmp"], ["--dirB", "/tmp"]])
 def test_compare_directories_requires_both_dirs(run_cli, extra):
     result = run_cli("compare-directories", *extra)
     assert "--dirA and --dirB arguments are required" in result
+    assert result.exit_code == 1
 
 
 # -- --db-path resolution --------------------------------------------------

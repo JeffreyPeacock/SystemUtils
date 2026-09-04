@@ -227,8 +227,10 @@ def run_cli(capsys, monkeypatch):
         monkeypatch.setattr(sys, "argv", argv)
         code = 0
         try:
-            main_module.main()
-        except SystemExit as exc:  # argparse's own exit path
+            # main() reports failure by RETURNING a code (#23); argparse can
+            # still raise SystemExit from inside, so both paths are handled.
+            code = main_module.main() or 0
+        except SystemExit as exc:
             code = exc.code if isinstance(exc.code, int) else 1
         captured = capsys.readouterr()
         return CliResult(argv=argv, exit_code=code,
