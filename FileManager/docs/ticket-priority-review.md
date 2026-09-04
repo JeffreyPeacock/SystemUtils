@@ -3,7 +3,7 @@
 The SystemUtils project board (#14) on GitHub holds the authoritative detail; this doc is the
 at-a-glance ordering view the board doesn't give cleanly.
 
-**Snapshot:** 2026-09-04 13:29 MST · 7 open · 7 Backlog
+**Snapshot:** 2026-09-04 13:34 MST · 6 open · 6 Backlog
 
 |  Pri   | #  |  Status |    Area   | Title | Note |
 |:------:|:--:|:-------:|:---------:|-------|------|
@@ -13,13 +13,12 @@ at-a-glance ordering view the board doesn't give cleanly.
 | **p4** | 7  | Backlog |  Database | Two different remove_record functions, and the CLI<br>uses the one its help does not describe | Two functions, one name, and `main.py` imports the<br>one its own help does not describe. Do with #1. |
 | **p4** | 10 | Backlog |  Database | reporting.py opens its own SQLite connections<br>instead of going through db.py | No retry on the read path, so a report run during a<br>scan raises instead of waiting. Two places to<br>change whenever connection handling moves. |
 | **p4** | 11 | Backlog |    GUI    | The GUI is a paginated duplicate list, not the file<br>manager the requirements describe | The largest requirements gap, and a decision rather<br>than a defect. Decide whether to build it or revise<br>the requirement. |
-| **p4** | 16 | Backlog |  Tooling  | Decide whether a pre-commit hook blocks or warns,<br>then add it | **Blocked on your decision:** block or warn. CI<br>already gates every push, so this is feedback<br>speed, not the gate. Do not implement until<br>answered. |
 
 ## Tally
 
 | Priority | p1 | p2 | p3 | p4 | p5 | — | Total |
 |----------|---:|---:|---:|---:|---:|--:|------:|
-| Open | 0 | 1 | 0 | 6 | 0 | 0 | 7 |
+| Open | 0 | 1 | 0 | 5 | 0 | 0 | 6 |
 
 &nbsp;
 
