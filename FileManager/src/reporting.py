@@ -114,39 +114,46 @@ def report_files_with_more_than_1_duplicate(db_path):
 
 def report_duplicate_sizes(db_path):
     """
-    Sum the file sizes of duplicates and report the total.
+    Report the space that deleting the redundant copies would reclaim.
+
+    Two defects lived here:
+
+      The total was halved (#4). That is exact for a group of two and wrong
+      above it -- a file with four copies has THREE redundant, not two, so the
+      old figure understated by 25%, and by 40% at ten copies. The reclaimable
+      size per group is (count - 1) x size, which is what the SQL computes now.
+
+      An empty result crashed (#22). SUM over no rows is NULL, and the division
+      happened BEFORE the `if total_size:` guard that reads as protection
+      against exactly that -- so a database with no duplicates raised TypeError
+      and the "No duplicate files found." branch was unreachable.
 
     Args:
         db_path (str): The path to the database file.
     """
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
+    # One row per duplicated checksum: the size of a single copy and how many
+    # copies exist. Summing size * (n - 1) leaves one copy of each intact.
     cursor.execute('''
-        SELECT SUM(size) FROM files
-        WHERE md5sum IN (
-            SELECT md5sum FROM files
-            GROUP BY md5sum HAVING COUNT(*) > 1
-        )
+        SELECT MIN(size), COUNT(*) FROM files
+        GROUP BY md5sum HAVING COUNT(*) > 1
     ''')
-    total_size = cursor.fetchone()[0]
+    groups = cursor.fetchall()
     conn.close()
 
-    #  total_size is the total of all files.  We'd really like to know what we would save if we
-    #  deleted all but one of each duplicate file.  So we assume there is one copy of each file
-    # and device by 2.  This should be mostly accurate.
-    total_size = total_size / 2
-    if total_size:
-        if total_size >= 1024 ** 4:  # Check if size is in terabytes
-            total_size_tb = total_size / (1024 ** 4)
-            print(f"Total size of duplicate files: {total_size_tb:.2f} TB")
-        elif total_size >= 1024 ** 3:  # Check if size is in gigabytes
-            total_size_gb = total_size / (1024 ** 3)
-            print(f"Total size of duplicate files: {total_size_gb:.2f} GB")
-        else:  # Otherwise, report in megabytes
-            total_size_mb = total_size / (1024 ** 2)
-            print(f"Total size of duplicate files: {total_size_mb:.2f} MB")
-    else:
+    reclaimable = sum(size * (count - 1) for size, count in groups if size is not None)
+
+    if not groups or reclaimable <= 0:
         print("No duplicate files found.")
+        return
+
+    if reclaimable >= 1024 ** 4:
+        print(f"Total size of duplicate files: {reclaimable / 1024 ** 4:.2f} TB")
+    elif reclaimable >= 1024 ** 3:
+        print(f"Total size of duplicate files: {reclaimable / 1024 ** 3:.2f} GB")
+    else:
+        print(f"Total size of duplicate files: {reclaimable / 1024 ** 2:.2f} MB")
 
 
 def report_prefix_count(db_path, prefix):
