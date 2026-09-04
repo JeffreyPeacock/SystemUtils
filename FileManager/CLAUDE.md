@@ -86,6 +86,18 @@ same PR that raises real coverage; never lower it to make a red build green.
 Same rule for the per-module opt-out stanzas in `mypy.ini`: a module leaves that
 list by being annotated. Reasoning in repo-root `docs/Development-Principles.md` §4.
 
+Every run writes **`.coverage-summary.md`** (gitignored): overall line and
+branch tables, a per-file breakdown with 🟢/🟡/🔴 badges, and the test counts.
+`--no-cov` runs skip it. A file that is deliberately below full coverage gets a
+`†` and a footnote from `COVERAGE_NOTES` in `scripts/coverage_summary.py` —
+`gui.py` has one, so its 11% reads as a decision rather than neglect. Add a note
+only where the reason is real; if the honest answer is "this should be
+restructured so it can be tested", say that instead.
+
+Note the summary reports lines and branches **separately**, while pytest prints
+one combined figure — `--cov-fail-under` compares against the combined one, so
+the numbers differ without disagreeing.
+
 Fixtures live in `test_data/`. `data/` and `duplicate_data/` are a
 **byte-identical pair, file for file** — that pairing is the duplicate-detection
 fixture, and a file present in one but not the other breaks tests with a
