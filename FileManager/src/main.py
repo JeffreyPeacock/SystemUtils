@@ -8,7 +8,10 @@ sys.path.append(
 
 import logging
 import argparse
-from src.db import initialize_db, audit_db, get_file_info, scan_and_report_unique_files
+from src.db import (
+    initialize_db, audit_db, get_file_info, get_md5_by_path,
+    scan_and_report_unique_files,
+)
 from src.file_ops import (
     scan, check_file, process_file, remove_record, remove_record_by_path,
     remove_records_by_regex,
@@ -103,12 +106,26 @@ def _origin(flag):
 
 
 def get_file_info_action(db_path, file_path):
+    """Print what the database holds for one path.
+
+    The checksum comes from `get_md5_by_path`, not from `get_file_info`.
+    This used to read `file_info[2]`, but `get_file_info` selects only
+    (size, last_modified), so the action raised IndexError for every path that
+    was actually in the database -- it had never worked (#21).
+
+    Widening `get_file_info` to three columns would have been the other fix and
+    was rejected: its second caller is `process_file`, which unpacks a 2-tuple
+    on the skip-check hot path, and that path is the thing that makes rescanning
+    a large tree cheap. A one-off diagnostic does not get to reshape it for the
+    sake of one query.
+    """
     file_info = get_file_info(db_path, file_path)
     if file_info:
+        size, last_modified = file_info
         print(f"File: {file_path}")
-        print(f"Size: {file_info[0]}")
-        print(f"Last Modified: {file_info[1]}")
-        print(f"MD5: {file_info[2]}")
+        print(f"Size: {size}")
+        print(f"Last Modified: {last_modified}")
+        print(f"MD5: {get_md5_by_path(db_path, file_path)}")
     else:
         print(f"No information found for file: {file_path}")
 

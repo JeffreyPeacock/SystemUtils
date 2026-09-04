@@ -108,12 +108,6 @@ def test_db_path_naming_a_file_is_used_as_given(run_cli, tmp_path):
 # -- dispatch reaches the real actions -------------------------------------
 
 
-@pytest.mark.xfail(
-    reason="#21 -- get_file_info_action reads file_info[2] but get_file_info "
-           "selects only two columns, so the action always raises IndexError",
-    raises=IndexError,
-    strict=True,
-)
 def test_get_file_info_reports_a_recorded_file(run_cli, db_path, dup_tree):
     from src.db import store_file_info
     from src.md5sum import compute_md5
@@ -123,8 +117,10 @@ def test_get_file_info_reports_a_recorded_file(run_cli, db_path, dup_tree):
 
     result = run_cli("get-file-info", str(path), "--db-path", db_path)
 
+    assert result.exit_code == 0
     assert str(path) in result
     assert compute_md5(str(path)) in result
+    assert str(os.path.getsize(path)) in result
 
 
 def test_get_file_info_on_an_unknown_path_says_so(run_cli, db_path):
