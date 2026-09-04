@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -186,3 +187,51 @@ def _no_writes_into_the_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.chdir(cwd)
     yield
     shutil.rmtree(cwd, ignore_errors=True)
+
+
+# -- invoking the CLI ------------------------------------------------------
+#
+# main() is 107 statements of argparse setup and dispatch, and none of it was
+# reachable from a test: it reads sys.argv, prints to stdout, and lets argparse
+# raise SystemExit. CaptureServer has no equivalent to copy -- its entry point
+# is a FastAPI app driven through TestClient, which does not apply to a CLI.
+
+
+@dataclass
+class CliResult:
+    """What one CLI invocation did."""
+
+    argv: list[str]
+    exit_code: int
+    stdout: str
+    stderr: str
+
+    def __contains__(self, text: str) -> bool:
+        """`"usage" in result` searches both streams -- main() uses both."""
+        return text in self.stdout or text in self.stderr
+
+
+@pytest.fixture
+def run_cli(capsys, monkeypatch):
+    """Run `main()` with the given arguments and capture everything.
+
+    Returns a CliResult rather than raising, because argparse exits through
+    SystemExit for both success (`help`) and failure (a bad action), and a test
+    that has to wrap every call in pytest.raises says less than one that
+    asserts on the code.
+    """
+    from src import main as main_module
+
+    def invoke(*args: str) -> CliResult:
+        argv = ["main.py", *args]
+        monkeypatch.setattr(sys, "argv", argv)
+        code = 0
+        try:
+            main_module.main()
+        except SystemExit as exc:  # argparse's own exit path
+            code = exc.code if isinstance(exc.code, int) else 1
+        captured = capsys.readouterr()
+        return CliResult(argv=argv, exit_code=code,
+                         stdout=captured.out, stderr=captured.err)
+
+    return invoke
