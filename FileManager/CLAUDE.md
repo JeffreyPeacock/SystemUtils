@@ -86,11 +86,16 @@ same PR that raises real coverage; never lower it to make a red build green.
 Same rule for the per-module opt-out stanzas in `mypy.ini`: a module leaves that
 list by being annotated. Reasoning in repo-root `docs/Development-Principles.md` §4.
 
-Every run writes **`.coverage-summary.md`** (gitignored): overall line and
+Every run writes **`.coverage-summary.md`**, and it is **committed**: overall line and
 branch tables, a per-file breakdown with 🟢/🟡/🔴 badges, and the test counts.
 `--no-cov` runs skip it. A file that is deliberately below full coverage gets a
 `†` and a footnote from `COVERAGE_NOTES` in `scripts/coverage_summary.py` —
-`gui.py` has one, so its 11% reads as a decision rather than neglect. Add a note
+`gui.py` has one, so its 11% reads as a decision rather than neglect.
+
+It is tracked deliberately, not ignored: the point is to see the per-file
+numbers move in a pull request diff. That does mean a commit touching tests
+usually carries a one-line churn in this file — regenerate it (`python -m
+pytest`) and include it rather than leaving a stale one behind. Add a note
 only where the reason is real; if the honest answer is "this should be
 restructured so it can be tested", say that instead.
 
