@@ -71,6 +71,29 @@ Branch prefixes: `file-manager/`, `ops/`, `feature/` (more than one utility),
 `chore/` (deps, CI, config), `docs/`. Documentation-only changes may go straight
 to `main`.
 
+### The pre-commit hook
+
+Optional, and **it blocks**: a failing suite refuses the commit. Install it from
+the repository root —
+
+```bash
+ln -sf ../../scripts/pre-commit-hook.sh .git/hooks/pre-commit
+```
+
+It runs `pytest` and `mypy` for whichever utility has staged changes, costs
+about 2.3 seconds, skips documentation-only commits entirely, and does nothing
+when a commit touches no utility. Because `pytest.ini` enforces the coverage
+floor, a coverage regression fails it too — deliberately.
+
+Work in progress is expected to need an escape hatch, and using it is normal:
+
+```bash
+git commit --no-verify
+```
+
+Remove the hook with `rm .git/hooks/pre-commit`. Note it tests the working
+tree rather than the staged snapshot; the reasoning is in the script header.
+
 ### Quality ratchets
 
 Two numbers in this repo only ever move up, and the reasoning is in
