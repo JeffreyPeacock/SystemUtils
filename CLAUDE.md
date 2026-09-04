@@ -185,6 +185,7 @@ identifier table the commands read.
 share. Two conventions, both pinned by the reasoning in
 `docs/Development-Principles.md`:
 
+- **`pre-commit-hook.sh` blocks.** A failing suite refuses the commit (#16, decided 2026-09-04). It is opt-in — `ln -sf ../../scripts/pre-commit-hook.sh .git/hooks/pre-commit` — scopes to whichever utility has staged files, skips docs-only commits, and is escaped with `git commit --no-verify`, which is the intended route for work in progress rather than weakening the hook.
 - **Shebang ⟺ executable bit.** A script that is run has both; a file that is only ever sourced or imported (`lib/common.sh`, `lib/mask.py`) has neither. A shebang without the bit fails only on the machine where it matters (§3).
 - **One definition of what a secret looks like.** `lib/mask.py` is the sole home of the masking patterns, and the same list both masks and verifies. Two copies is how a secret leaks twice.
 
