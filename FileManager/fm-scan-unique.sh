@@ -1,13 +1,12 @@
-#!/bin/bash
-if [ -z "$1" ]; then
-    echo "ERROR: Missing 'source-dir'"
-    echo "USAGE: $0 source-dir"
+#!/usr/bin/env bash
+# Report files under source-dir that have no match already in the database.
+source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/fm-common.sh"
+
+if [ $# -lt 1 ]; then
+    echo "ERROR: Missing 'source-dir'" >&2
+    echo "USAGE: $0 source-dir" >&2
     exit 1
 fi
+[ -d "$1" ] || { echo "ERROR: not a directory: $1" >&2; exit 1; }
 
-cd /home/jeffp/Workspace/FileManager
-source .venv/bin/activate
-set -x
-python src/main.py --threads 8 --db-path /home/public/Video.db scan-unique-files $1
-
-
+fm_run scan-unique-files "$1"

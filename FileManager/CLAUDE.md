@@ -171,12 +171,28 @@ of dots mixed with any report output.
 
 ## Shell wrappers
 
-`fm-scan-Video.sh`, `fm-scan-unique.sh`, and `fm-audit-db-Video.sh` all
-`cd /home/jeffp/Workspace/FileManager` — a symlink to a **different, older copy**
-of this project (`~/Workspace/File-Manager/github-copilot/FileManager`) with its
-own `.venv`. **They do not run the code in this directory.** They also predate
-the pyenv-virtualenv setup and still `source .venv/bin/activate`. Repointing them
-is open work.
+`fm-scan-Video.sh`, `fm-scan-unique.sh` and `fm-audit-db-Video.sh` run **this**
+checkout. They resolve their own location from `BASH_SOURCE` and share
+`fm-common.sh`, which is sourced and therefore carries neither a shebang nor the
+executable bit.
+
+The interpreter comes from `.python-version` via `pyenv exec`, deliberately —
+a shell that inherited `VIRTUAL_ENV` from another project silently beats the
+pyenv shim, so a bare `python` can be a different interpreter from the one
+`pyenv version` reports.
+
+Overrides, all environment variables: `FM_DB` (default `/home/public/Video.db`),
+`FM_THREADS` (8), `FM_VIDEO_DIRS`. Each run prints the resolved directory,
+interpreter, database and thread count before doing anything.
+
+**`fm-audit-db-Video.sh` defaults to `--dry-run`** and needs `--commit` to
+remove rows.
+
+Until #9 these scripts began `cd /home/jeffp/Workspace/FileManager` — a symlink
+to an **older copy** of this project with its own `.venv` — so a fix landed here
+never reached the scheduled scans. `tests/test_script_conventions.py` now pins
+that: no wrapper may hard-code an absolute `cd` or activate a `.venv`, and
+shebang must match the executable bit across every script in the repo.
 
 `cmpdirs.sh` is gitignored — its paths are machine-specific.
 
