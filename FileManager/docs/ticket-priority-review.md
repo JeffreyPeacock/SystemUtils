@@ -9,15 +9,15 @@ at-a-glance ordering view the board doesn't give cleanly.
 |:------:|:--:|:-------:|:---------:|-------|------|
 | **p2** | 6  |  Ready  | Reporting | --min-duplicates is off by one | `HAVING COUNT(*) > ?` where the flag reads as "at<br>least". Decide the meaning first, then make help<br>and code agree. |
 | **p2** | 7  |  Ready  |  Database | Two different remove_record functions, and the CLI<br>uses the one its help does not describe | Two functions, one name, and `main.py` imports the<br>one its own help does not describe. Do with #1. |
-| **p2** | 8  | Backlog |  Tooling  | Epic: raise coverage from 50.44% to the 95% the<br>requirements ask for | The umbrella for the 29.81% → 95% gap. #12 landed<br>and unblocked it; still needs #13 for `main.py`.<br>Close only when the floor reaches 95. |
+| **p2** | 8  | Backlog |  Tooling  | Epic: raise coverage from 50.44% to the 95% the<br>requirements ask for | **Epic, not a unit of work — keep out of Ready.**<br>Children #32-#36; closes when the floor reaches 95.<br>Now at 50.44%. |
 | **p2** | 10 |  Ready  |  Database | reporting.py opens its own SQLite connections<br>instead of going through db.py | No retry on the read path, so a report run during a<br>scan raises instead of waiting. Two places to<br>change whenever connection handling moves. |
-| **p2** | 32 | Backlog |  Scanning | Cover the scan engine: file_ops is at 35% |  |
-| **p3** | 33 | Backlog |  Database | Cover db.py's retry loops and unique-file scan: 64% |  |
-| **p3** | 34 | Backlog | Reporting | Cover the reporting actions: reporting.py is at 29% |  |
+| **p2** | 32 | Backlog |  Scanning | Cover the scan engine: file_ops is at 35% | **Highest-value of the five.** The scan engine, and<br>the sentinel shutdown would *hang* rather than fail<br>if it regressed. |
+| **p3** | 33 | Backlog |  Database | Cover db.py's retry loops and unique-file scan: 64% | The lock-retry loops are the entire concurrency<br>safety net and no test has ever entered one. Cover<br>the re-raise branch too. |
+| **p3** | 34 | Backlog | Reporting | Cover the reporting actions: reporting.py is at 29% | Every action but one untested. #4 and #22 were<br>found only when a test finally reached them. |
 | **p4** | 3  | Backlog |    GUI    | The GUI writes the checkbox object, not the path,<br>so rm_commands.txt is not runnable | The GUI's only output is unrunnable — it writes<br>`PY_VAR3`, not a path. Extract the path logic out<br>of the widget while fixing, which also serves #15. |
 | **p4** | 11 | Backlog |    GUI    | The GUI is a paginated duplicate list, not the file<br>manager the requirements describe | The largest requirements gap, and a decision rather<br>than a defect. Decide whether to build it or revise<br>the requirement. |
-| **p4** | 35 | Backlog |  Tooling  | Cover utils.py, including report_settings' untested<br>guard: 23% |  |
-| **p4** | 36 | Backlog |  Tooling  | Cover main.py's remaining dispatch arms: 80% |  |
+| **p4** | 35 | Backlog |  Tooling  | Cover utils.py, including report_settings' untested<br>guard: 23% | Cheapest point on the board — 21 statements.<br>Includes `report_settings`, added by #2 with no<br>test of its own. |
+| **p4** | 36 | Backlog |  Tooling  | Cover main.py's remaining dispatch arms: 80% | Dispatch arms #13's fixture does not reach. Assert<br>the `--use-gui` call, do not open a window. |
 
 ## Tally
 

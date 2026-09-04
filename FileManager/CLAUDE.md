@@ -22,7 +22,8 @@ below worth reading before changing anything.
 
 `docs/REQUIREMENTS.txt` is the original specification. Two of its requirements are
 **not met**: the "full featured graphical user-interface" (only a paginated
-Tkinter duplicate list exists) and 95% coverage (actual: 29.81%).
+Tkinter duplicate list exists) and 95% coverage (actual: **50.44%** — tracked
+by epic #8 and its children #32-#36).
 
 ## Tech Stack
 
@@ -44,9 +45,14 @@ level up.
 # Scan (comma-separated list of directories and/or files)
 python src/main.py --threads 8 --db-path /path/to/db.db scan /dir/one,/dir/two
 
-# Re-verify every recorded path; drop rows for files that no longer exist
+# Re-verify every recorded path. Deletes rows -- always --dry-run first.
+python src/main.py --threads 8 --db-path /path/to/db.db audit-db --dry-run
 python src/main.py --threads 8 --db-path /path/to/db.db audit-db \
     --exclude-prefix /mnt/offline,/mnt/other
+
+# Remove records. LITERAL by default; --regex matches the WHOLE path.
+python src/main.py --db-path /path/to/db.db remove-record /exact/path
+python src/main.py --db-path /path/to/db.db remove-record '/a/b/.*' --regex
 
 python src/main.py --db-path /path/to/db.db report-duplicates --min-duplicates 1
 python src/main.py --db-path /path/to/db.db report-duplicate-sizes
@@ -64,22 +70,15 @@ python -m mypy src/
 
 ## Testing
 
-21 tests across 4 modules, all passing. Coverage is on by default via
-`pytest.ini` (`--cov=src --cov-branch`), writes `coverage.xml` and
-`test-results.xml`, and enforces `--cov-fail-under=29` against a measured
-**29.81%** line+branch coverage.
+**80 tests across 7 modules, all passing, no xfails.** Coverage is on by default
+via `pytest.ini` (`--cov=src --cov-branch`), writes `coverage.xml` and
+`test-results.xml`, and enforces `--cov-fail-under=50` against a measured
+**50.44%** combined line+branch coverage.
 
-Current coverage by module — `md5sum` is the only well-covered one:
-
-| Module | Coverage |
-|--------|----------|
-| `src/md5sum.py` | 100% |
-| `src/db.py` | 59% |
-| `src/utils.py` | 33% |
-| `src/reporting.py` | 16% |
-| `src/file_ops.py` | 14% |
-| `src/gui.py` | 9% |
-| `src/main.py` | 9% |
+Per-module figures live in `.coverage-summary.md`, regenerated every run and
+committed — read that rather than duplicating a table here that goes stale. As
+of 2026-09-04 the gap is concentrated: `reporting` 33%, `file_ops` 41%,
+`utils` 33%, `gui` 11% (deliberate), against `main` 83% and `db` 69%.
 
 **The floor is a ratchet — it only goes up.** Raise `--cov-fail-under` in the
 same PR that raises real coverage; never lower it to make a red build green.
@@ -118,7 +117,12 @@ beyond argument validation. Below it is a flat module layer, no classes:
 - `src/file_ops.py` — directory walking and the decision of whether a file needs hashing. `process_file` is the core routine.
 - `src/reporting.py` — read-only queries that print to stdout. Note it opens its own `sqlite3` connections rather than going through `db.py`.
 - `src/gui.py` — a Tkinter duplicate browser, reached only via `report-duplicates --use-gui`. Writes `rm_commands.txt` rather than deleting anything itself.
-- `src/md5sum.py`, `src/utils.py` — `compute_md5` (4 KB chunks) and `get_file_mtime_in_ms`.
+- `src/md5sum.py`, `src/utils.py` — `compute_md5` (4 KB chunks), `get_file_mtime_in_ms`,
+  and `report_settings`, which prints each setting's name, value and origin before a
+  destructive run and refuses a credential-shaped name outright
+  (`docs/Development-Principles.md` §2).
+- `scripts/coverage_summary.py` — renders `coverage.xml` as `.coverage-summary.md`,
+  invoked by a `pytest_sessionfinish` hook in `tests/conftest.py`.
 
 ### Schema
 
@@ -170,15 +174,16 @@ a database that has never been audited is still in rollback-journal mode.
 ## Behaviours that will surprise you
 
 Every entry here is a trap someone already fell into. Do not trim this section.
+Entries are removed only when the behaviour itself changes — four were removed
+on 2026-09-04 because #1, #2, #4 and #5 fixed them.
 
-- **Two different `remove_record` functions.** `src/db.py:remove_record` deletes one exact path. `src/file_ops.py:remove_record` takes a **regex** and deletes every matching row. `main.py` imports the `file_ops` one, so the `remove-record` CLI action matches by regex despite its usage text saying "the record associated with the specified path".
-- **That regex is `re.match`, so it is prefix-anchored and unterminated.** `remove_records_by_regex` calls `re.match(pattern, path)`, which anchors at the start of the string but not the end. Passing a literal path `/a/b` therefore also deletes `/a/bc` and everything under `/a/b-old/`. A pattern that does not start at the filesystem root matches nothing at all.
-- **`--min-duplicates` is off by one.** `find_duplicates_with_min_count` uses `HAVING COUNT(*) > ?`, so the default of 1 returns groups of 2 or more.
-- **Comma-separated paths from SQL.** The same function builds its result with `GROUP_CONCAT(path)` and splits on `,`, so any file path containing a comma is torn into fragments.
-- **`report-duplicate-sizes` divides by two.** It sums the size of every row in a duplicated group and halves the total, approximating "space reclaimed if one copy of each is kept". That is only correct for groups of exactly two.
+- **Two functions named `remove_record`.** `src/db.py:remove_record` deletes one exact path and returns the count. `src/file_ops.py:remove_record` takes a **regex**. `file_ops` also exports `remove_record_by_path`, which wraps the `db` one. `main.py` imports from `file_ops`. Naming them apart is #7, still open — until then, check which module you are importing from.
+- **`--min-duplicates` is off by one.** `find_duplicates_with_min_count` uses `HAVING COUNT(*) > ?`, so the default of 1 returns groups of 2 or more. Open as #6.
 - **`scan-unique-files` writes into the directory it scans.** It appends a `.processed_files.txt` resume log at the root of the target directory and reads it back on the next run. Delete it to force a full recheck.
 - **`compare-directories` ignores the database.** It hashes both trees in full, in-process, and compares with an O(n·m) `md5 not in dict.values()` scan.
-- **`audit-db --exclude-prefix` is the only guard against an unmounted volume.** Without it, every path under a volume that failed to mount looks deleted and its rows are removed. There is no dry-run mode.
+- **`audit-db` keeps rows whose *directory* is also missing.** A deleted file leaves its parent directory behind; an unmounted volume does not. Rows in the second case are reported as `SUSPECT` and **not** removed, so a failed mount no longer empties a subtree (#2). The cost is that a directory you genuinely deleted also survives — `--prune-missing-dirs` removes those deliberately, and `--dry-run` shows either case first.
+- **`remove-record` is literal by default.** `--regex` opts into pattern matching, and the pattern must match the **whole** path (`re.fullmatch`). Deleting a subtree is therefore explicit: `'/a/b/.*'`. Before #1 the argument was always a prefix-anchored regex, so a literal `/a/b` also deleted `/a/bc`.
+- **An invalid invocation exits non-zero.** 1 for a missing or invalid argument, 2 for an argparse rejection, 0 for `help` (#23). Scripts under `set -e` therefore stop, which they did not before.
 
 ## Logging output
 
@@ -223,7 +228,8 @@ a list in this file only goes stale. `/priority-review` renders it as a
 priority-ordered table in `FileManager/docs/ticket-priority-review.md` when you
 want it at a glance.
 
-The two highest-priority items are both silent-data-loss paths worth knowing
-before you touch `db.py`: **#1** (`remove-record`'s regex is prefix-anchored, so
-`/a/b` also deletes `/a/bc`) and **#2** (`audit-db` has no dry-run, so an
-unmounted volume empties every row beneath it).
+Both original silent-data-loss paths are now fixed — #1 (prefix-anchored
+removal) and #2 (audit-db emptying an unmounted volume). What remains is
+11 open tickets, five of them p2. The coverage work is epic **#8**, which is a
+tracker rather than a unit of work: its children **#32-#36** each carry a
+per-module coverage target and are the things to actually pick up.

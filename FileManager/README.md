@@ -86,11 +86,9 @@ gitignored.
 The output of this tool is a list of files a human may then delete, so these are
 worth reading first. The full list is in `CLAUDE.md`.
 
-- **`remove-record` takes a regex, not a path**, despite the built-in usage text. It is matched with `re.match`, which anchors at the start of the string but **not** the end — so a literal `/a/b` also deletes rows for `/a/bc` and everything under `/a/b-old/`.
-- **`audit-db` has no dry-run.** `--exclude-prefix` is the only thing standing between a volume that failed to mount and the removal of every row beneath it.
+- **`audit-db` deletes rows, so run it with `--dry-run` first.** It keeps rows whose *directory* is also missing and reports them as `SUSPECT`, so a volume that failed to mount no longer empties its subtree. The trade: a directory you genuinely deleted also survives — `--prune-missing-dirs` removes those on purpose.
+- **`remove-record` is literal by default.** `--regex` opts in, and the pattern must match the whole path, so deleting a subtree is explicit: `'/a/b/.*'`.
 - **`--min-duplicates` is off by one** — the query is `HAVING COUNT(*) > n`, so the default of 1 returns groups of 2 or more.
-- **Paths containing commas break duplicate reporting** — results are assembled with `GROUP_CONCAT(path)` and split on `,`.
-- **`report-duplicate-sizes` halves the total**, which is right for pairs and wrong for larger groups.
 - **`scan-unique-files` writes `.processed_files.txt` into the directory it is scanning** as a resume log. Delete it to force a full recheck.
 - **The `fm-*.sh` wrappers point at an older copy of this project** under `~/Workspace/File-Manager/`, not at this directory.
 
@@ -142,19 +140,23 @@ Python 3.14.7 via the `sys-utils` pyenv-virtualenv, then
 `pip install -r requirements-dev.txt`.
 
 ```bash
-python -m pytest              # 21 tests; coverage on, floor enforced
+python -m pytest              # 80 tests; coverage on, floor enforced
 python -m pytest --no-cov -q  # faster while iterating
 python -m mypy src/           # must be clean
 ```
 
 ### Testing
 
-21 tests in 4 modules. `pytest.ini` enables branch coverage, writes
-`coverage.xml` and `test-results.xml`, and fails under **29%** — the current real
-measurement is 29.81%. `docs/REQUIREMENTS.txt` asks for 95%; the gap is the main
-open work on this project. Coverage is concentrated in `md5sum.py` (100%) and
-`db.py` (59%); `main.py`, `gui.py`, `reporting.py`, and `file_ops.py` are all
-under 20%.
+80 tests in 7 modules, no xfails. `pytest.ini` enables branch coverage, writes
+`coverage.xml` and `test-results.xml`, and fails under **50%** — the current real
+measurement is 50.44%. `docs/REQUIREMENTS.txt` asks for 95%; closing that gap is
+epic [#8](https://github.com/JeffreyPeacock/SystemUtils/issues/8), split into
+per-module tickets #32–#36.
+
+Every run also writes **`.coverage-summary.md`**, which is committed — read it
+for the per-file breakdown rather than trusting a table in a README. As of
+2026-09-04 the gap is concentrated in `reporting` (33%), `file_ops` (41%),
+`utils` (33%) and `gui` (11%, deliberately — see the `†` note in that file).
 
 The floor **only moves up** — raise it in the same PR that raises real coverage.
 Same for the per-module opt-outs in `mypy.ini`: a module leaves the list by being
@@ -179,5 +181,8 @@ and the wrapper scripts that point at an older copy of the project.
 
 Two are worth reading before relying on this tool for anything destructive:
 
-- **#1** — `remove-record` matches with `re.match`, which anchors at the start of the path but not the end, so a literal `/a/b` also deletes rows for `/a/bc`
-- **#2** — `audit-db` has no dry-run, and treats an unmounted volume as a mass deletion
+- **#32** — `file_ops` is at 41%, and that module holds the scan engine and the skip check
+- **#7** — two functions are still named `remove_record`, and `main.py` imports the regex one
+- **#3** — the GUI writes the checkbox object rather than the path, so `rm_commands.txt` is not runnable
+
+The two original silent-data-loss paths, #1 and #2, are fixed.
