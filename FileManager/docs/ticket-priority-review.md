@@ -3,27 +3,23 @@
 The SystemUtils project board (#14) on GitHub holds the authoritative detail; this doc is the
 at-a-glance ordering view the board doesn't give cleanly.
 
-**Snapshot:** 2026-09-03 19:26 MST · 11 open · 11 Backlog
+**Snapshot:** 2026-09-03 20:50 MST · 7 open · 7 Backlog
 
 |  Pri   | #  |  Status |    Area   | Title | Note |
 |:------:|:--:|:-------:|:---------:|-------|------|
-| **p3** | 4  | Backlog | Reporting | report-duplicate-sizes halves the total, which is<br>only right for pairs | Understates by 25% at three copies, 40% at ten.<br>Correct only for pairs. The `dup_tree` fixture from<br>#12 now makes this cheap to test. |
-| **p3** | 5  | Backlog | Reporting | Duplicate reporting splits GROUP_CONCAT on a comma,<br>tearing apart paths that contain one | Commas are legal and common in media filenames —<br>the stated use case. Groups silently report names<br>that do not exist. |
 | **p3** | 8  | Backlog |  Tooling  | Raise coverage from 29.81% toward the 95% the<br>requirements ask for | The umbrella for the 29.81% → 95% gap. #12 landed<br>and unblocked it; still needs #13 for `main.py`.<br>Close only when the floor reaches 95. |
-| **p3** | 22 | Backlog | Reporting | report-duplicate-sizes crashes on a database with<br>no duplicates |  |
 | **p4** | 3  | Backlog |    GUI    | The GUI writes the checkbox object, not the path,<br>so rm_commands.txt is not runnable | The GUI's only output is unrunnable — it writes<br>`PY_VAR3`, not a path. Extract the path logic out<br>of the widget while fixing, which also serves #15. |
 | **p4** | 6  | Backlog | Reporting | --min-duplicates is off by one | `HAVING COUNT(*) > ?` where the flag reads as "at<br>least". Decide the meaning first, then make help<br>and code agree. |
 | **p4** | 7  | Backlog |  Database | Two different remove_record functions, and the CLI<br>uses the one its help does not describe | Two functions, one name, and `main.py` imports the<br>one its own help does not describe. Do with #1. |
 | **p4** | 10 | Backlog |  Database | reporting.py opens its own SQLite connections<br>instead of going through db.py | No retry on the read path, so a report run during a<br>scan raises instead of waiting. Two places to<br>change whenever connection handling moves. |
 | **p4** | 11 | Backlog |    GUI    | The GUI is a paginated duplicate list, not the file<br>manager the requirements describe | The largest requirements gap, and a decision rather<br>than a defect. Decide whether to build it or revise<br>the requirement. |
 | **p4** | 16 | Backlog |  Tooling  | Decide whether a pre-commit hook blocks or warns,<br>then add it | **Blocked on your decision:** block or warn. CI<br>already gates every push, so this is feedback<br>speed, not the gate. Do not implement until<br>answered. |
-| **p4** | 23 | Backlog |  Tooling  | An invalid action exits 0, so no script can detect<br>a bad invocation |  |
 
 ## Tally
 
 | Priority | p1 | p2 | p3 | p4 | p5 | — | Total |
 |----------|---:|---:|---:|---:|---:|--:|------:|
-| Open | 0 | 0 | 4 | 7 | 0 | 0 | 11 |
+| Open | 0 | 0 | 1 | 6 | 0 | 0 | 7 |
 
 &nbsp;
 
