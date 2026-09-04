@@ -3,11 +3,11 @@
 The SystemUtils project board (#14) on GitHub holds the authoritative detail; this doc is the
 at-a-glance ordering view the board doesn't give cleanly.
 
-**Snapshot:** 2026-09-03 20:50 MST · 7 open · 7 Backlog
+**Snapshot:** 2026-09-04 13:29 MST · 7 open · 7 Backlog
 
 |  Pri   | #  |  Status |    Area   | Title | Note |
 |:------:|:--:|:-------:|:---------:|-------|------|
-| **p3** | 8  | Backlog |  Tooling  | Raise coverage from 29.81% toward the 95% the<br>requirements ask for | The umbrella for the 29.81% → 95% gap. #12 landed<br>and unblocked it; still needs #13 for `main.py`.<br>Close only when the floor reaches 95. |
+| **p2** | 8  | Backlog |  Tooling  | Raise coverage from 29.81% toward the 95% the<br>requirements ask for | The umbrella for the 29.81% → 95% gap. #12 landed<br>and unblocked it; still needs #13 for `main.py`.<br>Close only when the floor reaches 95. |
 | **p4** | 3  | Backlog |    GUI    | The GUI writes the checkbox object, not the path,<br>so rm_commands.txt is not runnable | The GUI's only output is unrunnable — it writes<br>`PY_VAR3`, not a path. Extract the path logic out<br>of the widget while fixing, which also serves #15. |
 | **p4** | 6  | Backlog | Reporting | --min-duplicates is off by one | `HAVING COUNT(*) > ?` where the flag reads as "at<br>least". Decide the meaning first, then make help<br>and code agree. |
 | **p4** | 7  | Backlog |  Database | Two different remove_record functions, and the CLI<br>uses the one its help does not describe | Two functions, one name, and `main.py` imports the<br>one its own help does not describe. Do with #1. |
@@ -19,7 +19,7 @@ at-a-glance ordering view the board doesn't give cleanly.
 
 | Priority | p1 | p2 | p3 | p4 | p5 | — | Total |
 |----------|---:|---:|---:|---:|---:|--:|------:|
-| Open | 0 | 0 | 1 | 6 | 0 | 0 | 7 |
+| Open | 0 | 1 | 0 | 6 | 0 | 0 | 7 |
 
 &nbsp;
 
