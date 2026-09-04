@@ -135,24 +135,16 @@ def test_check_for_duplicates_finds_both_copies(db_path, dup_tree):
 def test_find_duplicates_groups_every_shared_pair(db_path, dup_tree):
     """Each duplicated pair forms its own group; the unique files form none."""
     for path in dup_tree.all_files():
-        if path == dup_tree.comma_pair[0] or path == dup_tree.comma_pair[1]:
-            continue  # see the xfail below -- #5
         store_file_info(db_path, str(path), compute_md5(str(path)))
 
     duplicates = find_duplicates_with_min_count(db_path, min_count=1)
 
+    # Every pair, the comma-carrying one included -- see #5.
     for left, right in dup_tree.duplicated:
-        if left == dup_tree.comma_pair[0]:
-            continue
         assert_one_group(duplicates, left, right)
     assert_not_duplicated(duplicates, *dup_tree.unique)
 
 
-@pytest.mark.xfail(
-    reason="#5 -- GROUP_CONCAT is split on ',', so a path containing one is "
-           "torn into fragments and its group never matches",
-    strict=True,
-)
 def test_find_duplicates_survives_a_comma_in_the_path(db_path, dup_tree):
     left, right = dup_tree.comma_pair
     store_file_info(db_path, str(left), compute_md5(str(left)))
