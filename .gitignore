@@ -31,3 +31,4 @@ test-results.xml
 *.db
 .processed_files.txt
 rm_commands.txt
+.coverage-summary.md

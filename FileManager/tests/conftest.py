@@ -235,3 +235,38 @@ def run_cli(capsys, monkeypatch):
                          stdout=captured.out, stderr=captured.err)
 
     return invoke
+
+
+def pytest_sessionfinish(session, exitstatus):
+    """Write .coverage-summary.md after every run that produced coverage.xml.
+
+    Returns early when coverage.xml is absent, so `--no-cov` runs are unaffected.
+
+    It writes the file and deliberately does NOT open an editor: this hook runs
+    on every session, including CI and any pre-commit hook, and launching one
+    would steal focus on runs nobody is watching. Read it when you want it:
+    `cat FileManager/.coverage-summary.md`.
+    """
+    import subprocess
+
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    coverage_xml = os.path.join(root, "coverage.xml")
+    if not os.path.exists(coverage_xml):
+        return
+
+    script = os.path.join(root, "scripts", "coverage_summary.py")
+    if not os.path.exists(script):
+        print(f"\nCANNOT WRITE SUMMARY: {script} is missing")
+        return
+
+    junit = os.path.join(root, "test-results.xml")
+    result = subprocess.run(
+        [sys.executable, script, coverage_xml,
+         os.path.join(root, ".coverage-summary.md"), junit],
+        cwd=root, capture_output=True, text=True,
+    )
+    if result.returncode != 0:
+        # Say so rather than leaving a stale summary looking current.
+        print(f"\nCANNOT WRITE SUMMARY: {script} exited {result.returncode}\n{result.stderr}")
+    elif result.stdout:
+        print(result.stdout.rstrip())
