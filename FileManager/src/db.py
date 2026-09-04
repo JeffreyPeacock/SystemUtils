@@ -230,32 +230,42 @@ def find_duplicates_with_min_count(db_path, min_count=1):
     """
     Find duplicate files in the database with a minimum count of occurrences.
 
+    Note `min_count` is compared with `>`, not `>=`, so the default of 1 returns
+    groups of two or more. That is long-standing behaviour and is #6, not this.
+
     Args:
         db_path (str): The path to the database file.
         min_count (int): The minimum number of duplicate occurrences to search for.
 
     Returns:
-        dict: A dictionary where the keys are MD5 checksums and the values are lists of file paths that have the same MD5 checksum.
+        dict: keys are MD5 checksums, values are lists of paths sharing it.
     """
-    def fetch_in_chunks(cursor, chunk_size=1000):
-        while True:
-            rows = cursor.fetchmany(chunk_size)
-            if not rows:
-                break
-            for row in rows:
-                yield row
-
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
+    # One row per (checksum, path), rather than GROUP_CONCAT joined server-side.
+    #
+    # This used to select GROUP_CONCAT(path) and split the result on ",". A
+    # comma is legal in a filename and common in a media library -- this tool's
+    # stated use case -- so any such path was torn into fragments: the group
+    # reported names that do not exist and omitted the real one (#5). SQLite
+    # offers no way to escape the separator, and no delimiter is safe against
+    # arbitrary paths, so the grouping is done in Python instead.
     cursor.execute('''
-        SELECT md5sum, GROUP_CONCAT(path) FROM files
-        GROUP BY md5sum HAVING COUNT(*) > ?
+        SELECT md5sum, path FROM files
+        WHERE md5sum IN (
+            SELECT md5sum FROM files
+            GROUP BY md5sum HAVING COUNT(*) > ?
+        )
+        ORDER BY md5sum
     ''', (min_count,))
 
     duplicates = {}
-    for row in fetch_in_chunks(cursor):
-        md5sum, paths = row
-        duplicates[md5sum] = paths.split(',')
+    while True:
+        rows = cursor.fetchmany(1000)
+        if not rows:
+            break
+        for md5sum, path in rows:
+            duplicates.setdefault(md5sum, []).append(path)
 
     conn.close()
     return duplicates
