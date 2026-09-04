@@ -62,46 +62,28 @@ def test_compare_directories_requires_both_dirs(run_cli, extra):
 # -- --db-path resolution --------------------------------------------------
 
 
-@pytest.mark.xfail(
-    reason="#22 -- report-duplicate-sizes divides None by 2 on a database with "
-           "no duplicates, so this reaches the action and raises TypeError",
-    raises=TypeError,
-    strict=True,
-)
 def test_db_path_defaults_into_the_current_directory(run_cli, tmp_path):
     """Omitted --db-path means ./file_manager.db.
 
     The autouse fixture runs each test from a scratch cwd, so this proves the
     default without writing into the repository.
     """
-    run_cli("report-duplicate-sizes")
+    assert run_cli("report-duplicate-sizes").exit_code == 0
     assert os.path.exists("file_manager.db")
 
 
-@pytest.mark.xfail(
-    reason="#22 -- report-duplicate-sizes divides None by 2 on a database with "
-           "no duplicates, so this reaches the action and raises TypeError",
-    raises=TypeError,
-    strict=True,
-)
 def test_db_path_naming_a_directory_gets_the_filename_appended(run_cli, tmp_path):
     target = tmp_path / "dbdir"
     target.mkdir()
-    run_cli("report-duplicate-sizes", "--db-path", str(target))
+    assert run_cli("report-duplicate-sizes", "--db-path", str(target)).exit_code == 0
     assert (target / "file_manager.db").exists(), (
         "a --db-path naming an existing directory should gain file_manager.db"
     )
 
 
-@pytest.mark.xfail(
-    reason="#22 -- report-duplicate-sizes divides None by 2 on a database with "
-           "no duplicates, so this reaches the action and raises TypeError",
-    raises=TypeError,
-    strict=True,
-)
 def test_db_path_naming_a_file_is_used_as_given(run_cli, tmp_path):
     target = tmp_path / "explicit.db"
-    run_cli("report-duplicate-sizes", "--db-path", str(target))
+    assert run_cli("report-duplicate-sizes", "--db-path", str(target)).exit_code == 0
     assert target.exists()
 
 
