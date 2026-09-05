@@ -3,16 +3,16 @@
 The SystemUtils project board (#14) on GitHub holds the authoritative detail; this doc is the
 at-a-glance ordering view the board doesn't give cleanly.
 
-**Snapshot:** 2026-09-04 18:04 MST · 6 open · all in Backlog
+**Snapshot:** 2026-09-04 18:22 MST · 6 open · all in Backlog
 
 |  Pri   | #  |  Status |   Area   | Title | Note |
 |:------:|:--:|:-------:|:--------:|-------|------|
-| **p2** | 8  | Backlog | Tooling  | Epic: raise coverage from 82.77% to the 95% the<br>requirements ask for | **Epic, not a unit of work — keep out of Ready.**<br>Now at 82.77%; #32-#34 are done. With gui still<br>inside --cov=src, 95% caps out near 88%, so<br>deciding what is measured is now part of the work. |
+| **p2** | 8  | Backlog | Tooling  | Epic: raise coverage from 93.11% to the 95% the<br>requirements ask for | **Epic, not a unit of work — keep out of Ready.**<br>95% is reachable now that #45 took gui out of the<br>denominator; #35 and #36 are the whole remaining<br>distance. Closes when the floor reaches 95. |
 | **p2** | 41 | Backlog | Scanning | is_file_unique reports an unreadable file as a<br>duplicate, not as unknown | Filed out of #33's coverage work. `False` means<br>"not unique", so a read error and a real duplicate<br>give the same answer, and the file drops out of the<br>keep list. Current behaviour is pinned by a test,<br>so this is a contract change. |
 | **p4** | 3  | Backlog |   GUI    | The GUI writes the checkbox object, not the path,<br>so rm_commands.txt is not runnable | The GUI's only output is unrunnable — it writes<br>`PY_VAR3`, not a path. Extract the path logic out<br>of the widget while fixing, which also serves #15. |
 | **p4** | 11 | Backlog |   GUI    | The GUI is a paginated duplicate list, not the file<br>manager the requirements describe | The largest requirements gap, and a decision rather<br>than a defect. Decide whether to build it or revise<br>the requirement. |
-| **p4** | 35 | Backlog | Tooling  | Cover utils.py, including report_settings' untested<br>guard: 55% | Cheapest point on the board — 21 statements. What<br>is left is `report_settings`, added by #2 with no<br>test of its own, including its credential-name<br>guard. |
-| **p4** | 36 | Backlog | Tooling  | Cover main.py's remaining dispatch arms: 81% | Dispatch arms #13's fixture does not reach. Assert<br>the `--use-gui` call, do not open a window. |
+| **p4** | 35 | Backlog | Tooling  | Cover utils.py, including report_settings' untested<br>guard: 62% | Cheapest point on the board — 21 statements, and<br>with #36 it holds every remaining miss. What is<br>left is `report_settings`, whose credential-name<br>guard has never been executed by a test. |
+| **p4** | 36 | Backlog | Tooling  | Cover main.py's remaining dispatch arms: 81% | Dispatch arms #13's fixture does not reach. Assert<br>the `--use-gui` call, do not open a window. With<br>#35, this closes #8. |
 
 ## Tally
 
