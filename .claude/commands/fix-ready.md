@@ -88,12 +88,29 @@ rewrites, so separating them guarantees a conflict and #1's own body says "Fix w
 it with the GraphQL query from `/priority-review` if the tie matters, and say so rather than
 silently ordering by number alone.
 
-## Step 3 — Present the plan and confirm (one pause)
+## Step 3 — State the plan and start work. Do not ask for approval.
 
-Show the ordered groups — for each: member tickets, the single PR it will produce (`Closes #…`), the
-files and functions it touches, and *why* those tickets are grouped or kept apart. **Pause once for
-confirmation.** After approval, run autonomously through all groups — do **not** pause between
-groups.
+**This command runs unattended. There is no confirmation pause.** Invoking `/fix-ready` *is* the
+approval: ordering the tickets and grouping them is the job being delegated, not a question to hand
+back. Announce the ordered groups — for each: member tickets, the single PR it will produce
+(`Closes #…`), the files and functions it touches, and *why* those tickets are grouped or kept
+apart — then go straight into Step 4 in the same turn.
+
+**Decide the judgement calls inside a ticket yourself**, and say in the PR body which way you went
+and why. A ticket that leaves a choice open ("decide whether the flag means *at least N copies* or
+*N beyond the first*") is asking the implementer to choose. Choose the reading that keeps existing
+behaviour intact where one does, state it, and move on.
+
+**Stop and ask only for a genuinely serious reason** — the kind where proceeding either way risks
+real damage or wastes the work outright:
+
+- a ticket's required change would delete or rewrite user data, or break the database format
+- two Ready tickets specify contradictory behaviour, so satisfying one violates the other
+- the fix needs a credential, a permission, or an external service that is not available
+- a `CANNOT CHECK`: a gate could not be run, so "passing" cannot be distinguished from "not run"
+
+Everything short of that — which grouping, which order, which name, which of two defensible
+semantics — is decided and reported, never escalated.
 
 ## Step 4 — For each group G, in order
 
@@ -201,6 +218,8 @@ that is a `CANNOT CHECK`, which stops the run.
 Summarise:
 
 - the groups planned, with the rationale for each grouping **and each deliberate non-grouping**
+- **every judgement call made inside a ticket** — the semantics chosen, the name picked, the
+  alternative rejected — since no one was asked at the time
 - PRs merged (PR # → issues closed)
 - ratchet changes (coverage floor raised to N, mypy stanzas removed)
 - any tickets split out or skipped, with the reason
