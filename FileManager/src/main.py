@@ -10,12 +10,9 @@ import logging
 import argparse
 from src.db import (
     initialize_db, audit_db, get_file_info, get_md5_by_path,
-    scan_and_report_unique_files,
+    scan_and_report_unique_files, remove_record_by_path, remove_records_by_regex,
 )
-from src.file_ops import (
-    scan, check_file, process_file, remove_record, remove_record_by_path,
-    remove_records_by_regex,
-)
+from src.file_ops import scan, check_file, process_file
 from src.reporting import (
     scan_dir_report, report_duplicates, report_duplicate_sizes,
     report_prefix_count, compare_directories
@@ -283,9 +280,15 @@ def main():
         # argument looks like a path, and a path silently interpreted as a
         # pattern is how #1 deleted siblings.
         if args.regex:
-            remove_record(db_path, args.path)
+            count = remove_records_by_regex(db_path, args.path)
+            print(f"{count} record(s) matching the pattern '{args.path}' "
+                  f"have been removed from the database.")
         else:
-            remove_record_by_path(db_path, args.path)
+            count = remove_record_by_path(db_path, args.path)
+            if count:
+                print(f"Removed the record for '{args.path}'.")
+            else:
+                print(f"No record found for '{args.path}'. Nothing removed.")
     elif args.action == 'compare-directories':
         compare_directories(args.dirA, args.dirB)
     elif args.action == 'get-file-info':

@@ -150,9 +150,13 @@ def store_file_info(db_path, path, md5sum):
     with_connection(db_path, work, commit=True,
                     description=f"store file info for {path}")
 
-def remove_record(db_path, file_path):
+def remove_record_by_path(db_path, file_path):
     """
-    Remove the information of a file from the database, matching the path exactly.
+    Remove the record for exactly this path. Not a pattern.
+
+    Named for what it does. It was `remove_record`, which is also what the
+    regex-based removal in file_ops.py was called, so a reader grepping the
+    name found the wrong definition about half the time (#7).
 
     Args:
         db_path (str): The path to the database file.
@@ -456,7 +460,7 @@ def audit_db(db_path, num_threads, process_file, exclude_prefix=None,
                 logging.info(f"WOULD REMOVE: {file_path} (File no longer exists)")
             else:
                 logging.info(f"REMOVED: {file_path} (File no longer exists)")
-                remove_record(db_path, file_path)
+                remove_record_by_path(db_path, file_path)
         else:
             size = os.path.getsize(file_path)
             last_modified = get_file_mtime_in_ms(file_path)

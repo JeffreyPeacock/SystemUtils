@@ -10,7 +10,7 @@ import pytest
 from tests.conftest import assert_not_duplicated, assert_one_group
 from src.db import (
     initialize_db, get_file_info, get_all_files_info, store_file_info,
-    remove_record, remove_records_by_regex, get_md5_by_path,
+    remove_record_by_path, remove_records_by_regex, get_md5_by_path,
     check_for_duplicates, find_duplicates_with_min_count, audit_db
 )
 from src.md5sum import compute_md5
@@ -79,7 +79,7 @@ class TestDBFunctions(unittest.TestCase):
         file_name = 'test-file.txt'
         file_path = os.path.join(self.test_data_dir, file_name)
         store_file_info(self.db_path, file_path, compute_md5(file_path))
-        remove_record(self.db_path, file_path)
+        remove_record_by_path(self.db_path, file_path)
         self.cursor.execute('SELECT * FROM files WHERE path = ?', (file_path,))
         result = self.cursor.fetchone()
         self.assertIsNone(result)
@@ -199,7 +199,7 @@ def test_exact_removal_leaves_sibling_prefixes_alone(db_path, dup_tree):
     _record(db_path, target)
     _record(db_path, sibling)
 
-    removed = remove_record(db_path, str(target))
+    removed = remove_record_by_path(db_path, str(target))
 
     assert removed == 1
     assert _paths(db_path) == {str(sibling)}
@@ -236,7 +236,7 @@ def test_exact_removal_of_an_absent_path_removes_nothing(db_path, dup_tree):
     kept = dup_tree.left / "unique-left.txt"
     _record(db_path, kept)
 
-    removed = remove_record(db_path, str(dup_tree.left / "never-recorded.txt"))
+    removed = remove_record_by_path(db_path, str(dup_tree.left / "never-recorded.txt"))
 
     assert removed == 0
     assert _paths(db_path) == {str(kept)}
