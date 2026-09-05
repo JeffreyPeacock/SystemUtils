@@ -89,6 +89,34 @@ file in `data/` has an identical counterpart in `duplicate_data/`" is four lines
 
 ---
 
+## 3a — A detector that stops nothing is not a gate
+
+A guard has to **change the outcome**, not merely report. The distinction is easy to lose because a
+tool that prints a detailed diagnostic *feels* like it is protecting you.
+
+Two of them were tried, in order, for the failure mode that a scan which never terminates **hangs**
+rather than raises:
+
+| what was tried | what it actually did |
+|---|---|
+| pytest's `faulthandler_timeout` | Printed every thread's stack at the timeout — and then **let the test keep running to completion and pass.** A 30-second test under `faulthandler_timeout = 5` reported `1 passed`. |
+| a fixture running the work on a daemon thread, failing fast | Failed the test at its own timeout, then **wedged the whole run at interpreter exit**: `ThreadPoolExecutor`'s threads are not daemons, and Python joins them at shutdown. Strictly worse than doing nothing, because it moved the hang somewhere with no output at all. |
+
+Only killing the process worked, which meant a plugin — `pytest-timeout`, `timeout_method = thread`.
+
+**In practice:**
+
+1. **Ask what the tool does after it detects.** Prints? Raises? Exits non-zero? Only the last two are
+   gates. A dump on stderr in a hung job that CI later kills is read by nobody.
+2. **Measure it on a deliberate failure before believing it**, which is §3's rule about proving a
+   guard can fail — extended: proving it fails is not enough, you must also see the *build* go red.
+   Both attempts above produced convincing-looking output while the suite reported success.
+3. **A guard that relocates a failure has made things worse.** Compare against doing nothing, not
+   against the ideal.
+
+**Related:** §3, and `FileManager/pytest.ini`, where the rejected alternatives are recorded beside the
+setting so nobody re-derives them.
+
 ## 4 — A quality floor is a ratchet, never a target to be lowered
 
 `pytest.ini` pins `--cov-fail-under`, and `mypy.ini` lists the modules still exempt from

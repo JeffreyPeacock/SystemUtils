@@ -89,7 +89,8 @@ worth reading first. The full list is in `CLAUDE.md`.
 - **`audit-db` deletes rows, so run it with `--dry-run` first.** It keeps rows whose *directory* is also missing and reports them as `SUSPECT`, so a volume that failed to mount no longer empties its subtree. The trade: a directory you genuinely deleted also survives — `--prune-missing-dirs` removes those on purpose.
 - **`remove-record` is literal by default.** `--regex` opts in, and the pattern must match the whole path, so deleting a subtree is explicit: `'/a/b/.*'`.
 - **`--min-duplicates` counts copies** — the default is 2, meaning a file and at least one other like it. It was off by one until #6.
-- **`scan-unique-files` writes `.processed_files.txt` into the directory it is scanning** as a resume log. Delete it to force a full recheck.
+- **`scan-unique-files` writes `.processed_files.txt` into the directory it is scanning** as a resume log. Delete it to force a full recheck. The log lands inside the scanned tree, so the next run finds and checks it like any other file.
+- **`is_file_unique` reports a file it could not read as a duplicate**, not as unknown — so an I/O error during hashing keeps a genuinely unique file out of the output. Open as #41.
 - **The `fm-*.sh` wrappers run whichever checkout they live in**, resolved from `BASH_SOURCE`, with the interpreter from `.python-version` via `pyenv exec`. They used to `cd` to an older copy with its own `.venv`, so fixes never reached the scheduled scans (#9); `tests/test_script_conventions.py` now fails any wrapper that hard-codes a path or activates a `.venv`.
 
 ---
@@ -140,16 +141,16 @@ Python 3.14.7 via the `sys-utils` pyenv-virtualenv, then
 `pip install -r requirements-dev.txt`.
 
 ```bash
-python -m pytest              # 107 tests; coverage on, floor enforced
+python -m pytest              # 152 tests; coverage on, floor enforced
 python -m pytest --no-cov -q  # faster while iterating
 python -m mypy src/           # must be clean
 ```
 
 ### Testing
 
-107 tests in 12 modules, no xfails. `pytest.ini` enables branch coverage, writes
-`coverage.xml` and `test-results.xml`, and fails under **53%** — the current real
-measurement is 53.27%. `docs/REQUIREMENTS.txt` asks for 95%; closing that gap is
+152 tests in 14 modules, no xfails. `pytest.ini` enables branch coverage, writes
+`coverage.xml` and `test-results.xml`, and fails under **82%** — the current real
+measurement is 82.77%. `docs/REQUIREMENTS.txt` asks for 95%; closing that gap is
 epic [#8](https://github.com/JeffreyPeacock/SystemUtils/issues/8), split into
 per-module tickets #32–#36.
 
@@ -175,14 +176,14 @@ one means adding it to the other.
 ## Backlog
 
 Tracked on the [SystemUtils board](https://github.com/users/JeffreyPeacock/projects/14),
-filtered by `component:file-manager` — 8 open at the time of writing: the
-coverage gap (epic #8 and its children #32-#36), the unrunnable GUI output (#3),
-and the GUI that is a paginated list rather than the file manager the
-requirements describe (#11).
+filtered by `component:file-manager` — 6 open at the time of writing: what is
+left of the coverage gap (epic #8, plus #35 for `utils` and #36 for `main`), the
+two GUI tickets (#3, #11), and #41.
 
 Two are worth reading before relying on this tool for anything destructive:
 
-- **#32** — `file_ops` is at 30%, and that module holds the scan engine and the skip check
+- **#41** — a file that could not be hashed is reported as a duplicate rather than as unknown, so an I/O error can keep the only copy out of the unique list
 - **#3** — the GUI writes the checkbox object rather than the path, so `rm_commands.txt` is not runnable
 
-The two original silent-data-loss paths, #1 and #2, are fixed.
+The original silent-data-loss paths #1 and #2 are fixed, and so is #43 —
+`scan-dir-report` never returned at all until its shutdown was tested.

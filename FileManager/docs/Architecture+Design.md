@@ -228,3 +228,39 @@ readings apart — `> 1` and `>= 2` agree there, which is why the defect survive
 Every test in `tests/test_min_duplicates_boundary.py` uses a group of three.
 
 **Related issues:** #6
+
+---
+
+## A hang needs a killer, not a reporter
+
+**Problem.** Both scan paths — `file_ops.scan_dir` and `reporting.scan_dir_report` — shut their
+workers down by putting one sentinel per worker on a queue. Getting that wrong does not raise; it
+**hangs**. A hung suite never goes red. It is killed by a CI job limit, minutes later, with no
+output naming the cause. And this was not hypothetical: `scan_dir_report` had never returned at all
+(#43), because its consumer skipped `task_done()` on the sentinel and the closing `queue.join()`
+waited on one unfinished task per worker forever.
+
+**Decision.** `pytest-timeout` in `requirements-dev.txt`, with `timeout = 60` and
+`timeout_method = thread` in `pytest.ini`. It dumps every thread's stack and then kills the process
+with a non-zero status.
+
+**Ruled out, both measured rather than reasoned about.**
+
+- *pytest's built-in `faulthandler_timeout`.* It prints the same tracebacks and **stops nothing**: a
+  30-second test under `faulthandler_timeout = 5` ran its full 30 seconds and reported `1 passed`.
+  Diagnostics, not a gate.
+- *A fixture running the scan on a daemon thread, failing fast.* Worse than nothing. The test goes
+  red at its own timeout, and then the run wedges at **interpreter exit** instead, because
+  `ThreadPoolExecutor`'s threads are not daemons and Python joins them at shutdown. Measured: pytest
+  hung past 90 seconds with no output at all. It moved the hang somewhere with worse diagnostics.
+
+**Why a dependency was accepted.** This repository is standard-library-only at *runtime*, and stays
+that way; `requirements-dev.txt` already carries pytest, pytest-cov and mypy. Killing a wedged
+interpreter from inside a test is not something a test can do to itself, so a plugin is the only
+option that changes the outcome.
+
+**Verified in both directions.** Reintroducing each defect — one sentinel for four workers in
+`scan_dir`, and the missing `task_done` in `scan_dir_report` — turns the suite red in eight seconds
+with the blocked consumers named in the dump. Restoring the fixes passes.
+
+**Related issues:** #32, #43 · repo-root `/Development-Principles.md` §3a

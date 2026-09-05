@@ -22,12 +22,12 @@ below worth reading before changing anything.
 
 `docs/REQUIREMENTS.txt` is the original specification. Two of its requirements are
 **not met**: the "full featured graphical user-interface" (only a paginated
-Tkinter duplicate list exists) and 95% coverage (actual: **53.27%** — tracked
+Tkinter duplicate list exists) and 95% coverage (actual: **82.77%** — tracked
 by epic #8 and its children #32-#36).
 
 ## Tech Stack
 
-**Python 3.14.7** · **sqlite3** · **hashlib** · **argparse** · **threading** + **concurrent.futures** + **queue** · **tkinter** (optional GUI) · **pytest** + **pytest-cov** (`pytest.ini`) · **mypy** (`mypy.ini`).
+**Python 3.14.7** · **sqlite3** · **hashlib** · **argparse** · **threading** + **concurrent.futures** + **queue** · **tkinter** (optional GUI) · **pytest** + **pytest-cov** + **pytest-timeout** (`pytest.ini`) · **mypy** (`mypy.ini`).
 
 Standard library only — there are no runtime dependencies. `requirements.txt` is
 deliberately empty of packages; test and type tooling is in
@@ -70,15 +70,16 @@ python -m mypy src/
 
 ## Testing
 
-**107 tests across 12 modules, all passing, no xfails.** Coverage is on by default
+**152 tests across 14 modules, all passing, no xfails.** Coverage is on by default
 via `pytest.ini` (`--cov=src --cov-branch`), writes `coverage.xml` and
-`test-results.xml`, and enforces `--cov-fail-under=53` against a measured
-**53.27%** combined line+branch coverage.
+`test-results.xml`, and enforces `--cov-fail-under=82` against a measured
+**82.77%** combined line+branch coverage.
 
 Per-module figures live in `.coverage-summary.md`, regenerated every run and
 committed — read that rather than duplicating a table here that goes stale. As
-of 2026-09-04 the gap is concentrated: `file_ops` 35%, `reporting` 40%,
-`utils` 33%, `gui` 11% (deliberate), against `main` 84% and `db` 74%.
+of 2026-09-04 the gap is **only** `gui` 11% (deliberate) and `utils` 55%;
+`db`, `file_ops`, `reporting` and `md5sum` are at 100% line and branch, `main`
+at 81%.
 
 **The floor is a ratchet — it only goes up.** Raise `--cov-fail-under` in the
 same PR that raises real coverage; never lower it to make a red build green.
@@ -97,6 +98,20 @@ usually carries a one-line churn in this file — regenerate it (`python -m
 pytest`) and include it rather than leaving a stale one behind. Add a note
 only where the reason is real; if the honest answer is "this should be
 restructured so it can be tested", say that instead.
+
+**`timeout = 60`, `timeout_method = thread` is a gate, not a nicety.** Both
+producer/consumer scans shut their workers down with one sentinel per worker,
+and getting that wrong *hangs* rather than raises — #43 was exactly that, and
+`scan-dir-report` never returned at all until it was found. pytest-timeout kills
+the process and prints every thread's stack, naming the consumers blocked in
+`queue.get()`.
+
+Do not swap it for either of the obvious stdlib alternatives; both were tried
+and measured. pytest's own `faulthandler_timeout` dumps the same tracebacks but
+**stops nothing** — a 30s test under `faulthandler_timeout = 5` ran its full 30
+seconds and passed. A fixture running the scan on a daemon thread is worse: the
+test goes red, then the run wedges at interpreter exit, because
+`ThreadPoolExecutor`'s threads are not daemons and are joined at shutdown.
 
 Note the summary reports lines and branches **separately**, while pytest prints
 one combined figure — `--cov-fail-under` compares against the combined one, so
@@ -183,7 +198,8 @@ rewritten the same day when #6 and #7 landed.
 
 - **`--min-duplicates` counts copies, and its default is 2.** `find_duplicates_with_min_count` compares with `>=`, so 2 means "a file and at least one other like it". Until #6 the comparison was `>` with a default of 1: the same output, reached by an argument that meant one less than it said, so `--min-duplicates 3` returned groups of four.
 - **Record removal is two functions in `db.py`, named apart.** `remove_record_by_path` takes one exact path; `remove_records_by_regex` takes a pattern matched against the whole path. Until #7 both were called `remove_record`, in different modules, with opposite behaviour. `tests/test_removal_function_names.py` fails if any module under `src/` reintroduces the bare name.
-- **`scan-unique-files` writes into the directory it scans.** It appends a `.processed_files.txt` resume log at the root of the target directory and reads it back on the next run. Delete it to force a full recheck.
+- **`scan-unique-files` writes into the directory it scans.** It appends a `.processed_files.txt` resume log at the root of the target directory and reads it back on the next run. Delete it to force a full recheck. Because the log lands *inside* the scanned tree, the next `os.walk` finds it and checks it like any other file — so a second run over an unchanged tree reports exactly one file: the log.
+- **`is_file_unique` reports an unreadable file as a duplicate.** Every exception below its `isfile` check becomes `return False`, which means *not unique* — the same answer as a file that genuinely has a copy elsewhere. Open as #41; the current behaviour is pinned by a test, so changing it is a deliberate contract change.
 - **`compare-directories` ignores the database.** It hashes both trees in full, in-process, and compares with an O(n·m) `md5 not in dict.values()` scan.
 - **`audit-db` keeps rows whose *directory* is also missing.** A deleted file leaves its parent directory behind; an unmounted volume does not. Rows in the second case are reported as `SUSPECT` and **not** removed, so a failed mount no longer empties a subtree (#2). The cost is that a directory you genuinely deleted also survives — `--prune-missing-dirs` removes those deliberately, and `--dry-run` shows either case first.
 - **`remove-record` is literal by default.** `--regex` opts into pattern matching, and the pattern must match the **whole** path (`re.fullmatch`). Deleting a subtree is therefore explicit: `'/a/b/.*'`. Before #1 the argument was always a prefix-anchored regex, so a literal `/a/b` also deleted `/a/bc`.
