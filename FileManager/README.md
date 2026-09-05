@@ -141,16 +141,17 @@ Python 3.14.7 via the `sys-utils` pyenv-virtualenv, then
 `pip install -r requirements-dev.txt`.
 
 ```bash
-python -m pytest              # 152 tests; coverage on, floor enforced
+python -m pytest              # 159 tests; coverage on, floor enforced
 python -m pytest --no-cov -q  # faster while iterating
 python -m mypy src/           # must be clean
 ```
 
 ### Testing
 
-152 tests in 14 modules, no xfails. `pytest.ini` enables branch coverage, writes
-`coverage.xml` and `test-results.xml`, and fails under **82%** — the current real
-measurement is 82.77%. `docs/REQUIREMENTS.txt` asks for 95%; closing that gap is
+159 tests in 15 modules, no xfails. `pytest.ini` enables branch coverage, writes
+`coverage.xml` and `test-results.xml`, and fails under **93%** — the current real
+measurement is 93.11%. `src/gui.py` is omitted from measurement in `.coveragerc`
+and named as excluded in the summary; see `CLAUDE.md` for why. `docs/REQUIREMENTS.txt` asks for 95%; closing that gap is
 epic [#8](https://github.com/JeffreyPeacock/SystemUtils/issues/8), split into
 per-module tickets #32–#36.
 

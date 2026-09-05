@@ -264,3 +264,62 @@ option that changes the outcome.
 with the blocked consumers named in the dump. Restoring the fixes passes.
 
 **Related issues:** #32, #43 · repo-root `/Development-Principles.md` §3a
+
+---
+
+## The untestable module leaves the denominator, not the report
+
+**Problem.** `docs/REQUIREMENTS.txt` asks for 95% coverage. `src/gui.py` is a Tkinter widget tree and
+a `mainloop()`, deliberately untested — asserting on widget construction tests the library, not this
+code. While it sat inside `--cov=src` it was 82 of 601 statements, so the total capped near **88%**
+with every other module at 100%. The floor could never ratchet to 95, and #8 could never close, no
+matter how much real testing happened.
+
+**Decision.** Omit `src/gui.py` in `.coveragerc`, and set the floor to what is then measured (93).
+
+**The failure mode this had to avoid is silence, not arithmetic.** An omit list is the easiest place
+in a repository to make a number say what you want, and a file dropped from a report is
+indistinguishable from a file nobody wrote. So the exclusion is built to stay visible:
+
+- `.coverage-summary.md` keeps a section titled **Excluded from measurement** that names `gui` and
+  gives the reason, immediately below the measured table.
+- The reason lives in `EXCLUSION_REASONS` in `scripts/coverage_summary.py`. The *list* does not —
+  the script reads `.coveragerc`, the one place coverage.py itself acts on, so a second copy cannot
+  drift. This is the same rule as `scripts/lib/mask.py`: one definition of the thing, or the two
+  copies disagree eventually.
+- A file omitted with no recorded reason renders as a warning line saying exactly that, rather than
+  quietly appearing in neither table.
+- `tests/test_coverage_config.py` fails if an omitted file has no reason, if the summary stops naming
+  it, if the omitted path does not exist, or if `.coveragerc` and the rendered report disagree. Each
+  guard was verified by breaking it.
+
+**Ruled out.** Testing `gui.py` to raise the number: the tests would assert on Tkinter. Lowering the
+requirement to 88%: it hides a real decision behind a number nobody could explain later. A blanket
+`# pragma: no cover` scattered through the file: the same exclusion, spread across the code where no
+report shows it.
+
+**What is meant to happen next.** The part of `gui.py` worth testing — which selected rows map to
+which paths — should be extracted out of the widget code, which is #3. When it is, it lands in a
+module that **is** measured. The omit list does not grow to follow it.
+
+**Related issues:** #45, #8, #3
+
+---
+
+## `--no-cov` must not rewrite the coverage report
+
+**Problem.** `pytest_sessionfinish` regenerated `.coverage-summary.md` whenever `coverage.xml`
+existed. Under `--no-cov` nothing is measured, but the previous run's `coverage.xml` is still on
+disk — so the hook rewrote the committed report from stale numbers. Found while testing #45: a
+`--no-cov` run regenerated the summary against a `coverage.xml` produced under a different
+`.coveragerc`, and the report then disagreed with the configuration it claims to describe.
+
+**Decision.** The hook returns early when `--no-cov` was passed, before it looks at `coverage.xml`
+at all. Two independent reasons to decline: nothing was measured, or there is nothing to read.
+
+**Why it matters more than it looks.** The summary is committed, and its whole value is being read
+in a pull request diff. A file that silently rewrites itself from data belonging to a different
+configuration is worse than one that is occasionally absent — a stale report is believed, a missing
+one is noticed. `CLAUDE.md` had claimed this behaviour all along; it was the code that disagreed.
+
+**Related issues:** #45
