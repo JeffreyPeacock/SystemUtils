@@ -22,7 +22,7 @@ below worth reading before changing anything.
 
 `docs/REQUIREMENTS.txt` is the original specification. Two of its requirements are
 **not met**: the "full featured graphical user-interface" (only a paginated
-Tkinter duplicate list exists) and 95% coverage (actual: **50.44%** — tracked
+Tkinter duplicate list exists) and 95% coverage (actual: **53.27%** — tracked
 by epic #8 and its children #32-#36).
 
 ## Tech Stack
@@ -54,7 +54,7 @@ python src/main.py --threads 8 --db-path /path/to/db.db audit-db \
 python src/main.py --db-path /path/to/db.db remove-record /exact/path
 python src/main.py --db-path /path/to/db.db remove-record '/a/b/.*' --regex
 
-python src/main.py --db-path /path/to/db.db report-duplicates --min-duplicates 1
+python src/main.py --db-path /path/to/db.db report-duplicates --min-duplicates 2
 python src/main.py --db-path /path/to/db.db report-duplicate-sizes
 python src/main.py help          # full action/option list
 
@@ -70,15 +70,15 @@ python -m mypy src/
 
 ## Testing
 
-**80 tests across 7 modules, all passing, no xfails.** Coverage is on by default
+**107 tests across 12 modules, all passing, no xfails.** Coverage is on by default
 via `pytest.ini` (`--cov=src --cov-branch`), writes `coverage.xml` and
-`test-results.xml`, and enforces `--cov-fail-under=50` against a measured
-**50.44%** combined line+branch coverage.
+`test-results.xml`, and enforces `--cov-fail-under=53` against a measured
+**53.27%** combined line+branch coverage.
 
 Per-module figures live in `.coverage-summary.md`, regenerated every run and
 committed — read that rather than duplicating a table here that goes stale. As
-of 2026-09-04 the gap is concentrated: `reporting` 33%, `file_ops` 41%,
-`utils` 33%, `gui` 11% (deliberate), against `main` 83% and `db` 69%.
+of 2026-09-04 the gap is concentrated: `file_ops` 35%, `reporting` 40%,
+`utils` 33%, `gui` 11% (deliberate), against `main` 84% and `db` 74%.
 
 **The floor is a ratchet — it only goes up.** Raise `--cov-fail-under` in the
 same PR that raises real coverage; never lower it to make a red build green.
@@ -113,9 +113,9 @@ regenerates the numbered files.
 `src/main.py` is an argparse dispatcher — one `elif` per action — with no logic
 beyond argument validation. Below it is a flat module layer, no classes:
 
-- `src/db.py` — every `sqlite3` write, plus the duplicate-finding queries. Owns the schema and the lock-retry behaviour.
+- `src/db.py` — the only module that calls `sqlite3.connect`. Owns the schema, every query, and the lock-retry behaviour, all through one gateway: `with_connection(db_path, work, commit=...)`.
 - `src/file_ops.py` — directory walking and the decision of whether a file needs hashing. `process_file` is the core routine.
-- `src/reporting.py` — read-only queries that print to stdout. Note it opens its own `sqlite3` connections rather than going through `db.py`.
+- `src/reporting.py` — formats and prints; every query it runs is a `db.py` function (#10). It must not import `sqlite3`, and `tests/test_db_owns_the_connection.py` fails if it does.
 - `src/gui.py` — a Tkinter duplicate browser, reached only via `report-duplicates --use-gui`. Writes `rm_commands.txt` rather than deleting anything itself.
 - `src/md5sum.py`, `src/utils.py` — `compute_md5` (4 KB chunks), `get_file_mtime_in_ms`,
   and `report_settings`, which prints each setting's name, value and origin before a
@@ -163,22 +163,26 @@ a `Queue` consumed by `--threads` workers, terminated by one empty-string
 sentinel per worker. `audit_db` and `scan_and_report_unique_files` use
 `ThreadPoolExecutor` directly.
 
-No connection is shared between threads. Every function opens `sqlite3.connect`,
-runs its statement, and closes. Writers (`store_file_info`, `remove_record`,
-`remove_records_by_regex`, `audit_db`) wrap that in a retry loop: up to
-`MAX_RETRIES = 10` attempts, sleeping 0.1s, catching only `OperationalError`
-containing "database is locked" and re-raising anything else. **Read paths have
-no such retry.** `audit_db` sets `PRAGMA journal_mode=WAL`; nothing else does, so
-a database that has never been audited is still in rollback-journal mode.
+No connection is shared between threads, and none is reused: `with_connection`
+opens one, runs the callable it was given, and closes. It retries up to
+`MAX_RETRIES = 10` times at `RETRY_DELAY = 0.1`s, catching **only**
+`OperationalError` containing "database is locked" and re-raising everything
+else, so a malformed statement fails on the first attempt rather than a second
+later. Reads get the same retry as writes as of #10 — before that they had
+none, and a report run during a scan raised instead of waiting.
+
+`audit_db` sets `PRAGMA journal_mode=WAL`; nothing else does, so a database that
+has never been audited is still in rollback-journal mode.
 
 ## Behaviours that will surprise you
 
 Every entry here is a trap someone already fell into. Do not trim this section.
-Entries are removed only when the behaviour itself changes — four were removed
-on 2026-09-04 because #1, #2, #4 and #5 fixed them.
+Entries change only when the behaviour does — four went on 2026-09-04 with
+#1, #2, #4 and #5, and the `--min-duplicates` and `remove_record` entries were
+rewritten the same day when #6 and #7 landed.
 
-- **Two functions named `remove_record`.** `src/db.py:remove_record` deletes one exact path and returns the count. `src/file_ops.py:remove_record` takes a **regex**. `file_ops` also exports `remove_record_by_path`, which wraps the `db` one. `main.py` imports from `file_ops`. Naming them apart is #7, still open — until then, check which module you are importing from.
-- **`--min-duplicates` is off by one.** `find_duplicates_with_min_count` uses `HAVING COUNT(*) > ?`, so the default of 1 returns groups of 2 or more. Open as #6.
+- **`--min-duplicates` counts copies, and its default is 2.** `find_duplicates_with_min_count` compares with `>=`, so 2 means "a file and at least one other like it". Until #6 the comparison was `>` with a default of 1: the same output, reached by an argument that meant one less than it said, so `--min-duplicates 3` returned groups of four.
+- **Record removal is two functions in `db.py`, named apart.** `remove_record_by_path` takes one exact path; `remove_records_by_regex` takes a pattern matched against the whole path. Until #7 both were called `remove_record`, in different modules, with opposite behaviour. `tests/test_removal_function_names.py` fails if any module under `src/` reintroduces the bare name.
 - **`scan-unique-files` writes into the directory it scans.** It appends a `.processed_files.txt` resume log at the root of the target directory and reads it back on the next run. Delete it to force a full recheck.
 - **`compare-directories` ignores the database.** It hashes both trees in full, in-process, and compares with an O(n·m) `md5 not in dict.values()` scan.
 - **`audit-db` keeps rows whose *directory* is also missing.** A deleted file leaves its parent directory behind; an unmounted volume does not. Rows in the second case are reported as `SUSPECT` and **not** removed, so a failed mount no longer empties a subtree (#2). The cost is that a directory you genuinely deleted also survives — `--prune-missing-dirs` removes those deliberately, and `--dry-run` shows either case first.

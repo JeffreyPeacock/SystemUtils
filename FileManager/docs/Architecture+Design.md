@@ -154,3 +154,77 @@ floor, with extra ceremony. Setting no floor at all — coverage then silently
 decays, which is exactly what produced the 29.81%.
 
 **Related:** repo-root `/Development-Principles.md` §4.
+
+---
+
+## One gateway owns every SQLite connection
+
+**Problem.** `reporting.py` called `sqlite3.connect` in five functions while
+`db.py` owned the schema, the retry loop and the WAL pragma. The retry loop is
+what made this more than untidiness: `db.py`'s writers wait out a
+`database is locked`, reporting did not, so a report run alongside a scan raised
+instead of waiting. Each of the five writers also carried its own copy of the
+loop, two of them sleeping a hard-coded `0.1` while `RETRY_DELAY` sat unused
+beside them.
+
+**Decision.** `db.with_connection(db_path, work, commit=...)` is the only place
+in the project that calls `sqlite3.connect`. It opens, runs the callable it is
+given, commits if asked, and closes — retrying only on
+`OperationalError` containing "database is locked", and re-raising everything
+else on the first attempt. Every function in `db.py` goes through it, readers
+and writers alike, and reporting's queries moved into `db.py` as named
+functions.
+
+**Why a callback rather than a context manager.** The unit being retried is the
+whole piece of work, not just the connect: `audit_db` holds a cursor across a
+`ThreadPoolExecutor` fan-out, and a `with` block cannot be re-entered from
+inside itself when the body fails. Passing the work in makes the retry boundary
+the same as the work boundary.
+
+**Ruled out.** Leaving the writers with their inline loops and giving only the
+readers a helper — the ticket's own reason for existing is that connection
+handling in two places gets changed in one. A connection pool or a
+long-lived connection per thread: SQLite's default threading mode forbids
+sharing a connection across threads, and this codebase's concurrency is
+threads throughout.
+
+**Also fixed by the move.** The old `finally: if conn: conn.close()` referenced
+`conn` before assignment whenever `sqlite3.connect` itself raised, so the
+failure path was the one that could not run.
+
+**Enforced by** `tests/test_db_owns_the_connection.py`, which parses each module
+under `src/` and fails if any but `db.py` imports `sqlite3`. It is parsed rather
+than grepped so the comments explaining the rule are not mistaken for
+violations, and the walker has its own test proving it reports a file that does
+import `sqlite3` — otherwise an empty result would be indistinguishable from a
+broken walker (`/Development-Principles.md` §3).
+
+**Related issues:** #10
+
+---
+
+## --min-duplicates counts copies, not copies beyond the first
+
+**Problem.** `find_duplicates_with_min_count` compared with `>`, so
+`--min-duplicates 1` returned groups of two and `--min-duplicates 3` returned
+groups of four. The flag was off by one at every value, and the ticket (#6) left
+the choice of meaning open: "at least N copies" or "at least N duplicates beyond
+the first".
+
+**Decision.** The flag counts **copies**. The comparison is `>=` and the default
+moves 1 → 2.
+
+**Why.** It is what the flag's name says, and pairing `>=` with a default of 2
+leaves the tool's output unchanged for anyone running it today — the default
+still reports groups of two or more — while every explicit value starts meaning
+what it says.
+
+**Ruled out.** Keeping `>` and restating the help as "beyond the first". That
+preserves the arithmetic but leaves `--min-duplicates 3` returning groups of
+four, which is the thing people actually trip over.
+
+**Note for whoever tests this next.** A two-copy group cannot tell the two
+readings apart — `> 1` and `>= 2` agree there, which is why the defect survived.
+Every test in `tests/test_min_duplicates_boundary.py` uses a group of three.
+
+**Related issues:** #6

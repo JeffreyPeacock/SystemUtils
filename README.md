@@ -99,7 +99,7 @@ tree rather than the staged snapshot; the reasoning is in the script header.
 Two numbers in this repo only ever move up, and the reasoning is in
 [Development-Principles §4](docs/Development-Principles.md):
 
-- **`FileManager/pytest.ini` → `--cov-fail-under`.** Currently `50`, against a measured 50.44%, having ratcheted 29 → 32 → 49 → 50. `FileManager/docs/REQUIREMENTS.txt` asks for 95%. Raise the floor in the same PR that raises real coverage.
+- **`FileManager/pytest.ini` → `--cov-fail-under`.** Currently `53`, against a measured 53.27%, having ratcheted 29 → 32 → 49 → 50 → 53. `FileManager/docs/REQUIREMENTS.txt` asks for 95%. Raise the floor in the same PR that raises real coverage.
 - **`FileManager/mypy.ini` → the per-module opt-out stanzas.** A module leaves the list by being annotated, never by the defaults being loosened.
 
 Neither is lowered to make a red build green.
