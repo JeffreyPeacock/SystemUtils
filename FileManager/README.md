@@ -141,28 +141,33 @@ Python 3.14.7 via the `sys-utils` pyenv-virtualenv, then
 `pip install -r requirements-dev.txt`.
 
 ```bash
-python -m pytest              # 159 tests; coverage on, floor enforced
+python -m pytest              # 194 tests; coverage on, floor enforced
 python -m pytest --no-cov -q  # faster while iterating
 python -m mypy src/           # must be clean
 ```
 
 ### Testing
 
-159 tests in 15 modules, no xfails. `pytest.ini` enables branch coverage, writes
-`coverage.xml` and `test-results.xml`, and fails under **93%** — the current real
-measurement is 93.11%. `src/gui.py` is omitted from measurement in `.coveragerc`
-and named as excluded in the summary; see `CLAUDE.md` for why. `docs/REQUIREMENTS.txt` asks for 95%; closing that gap is
-epic [#8](https://github.com/JeffreyPeacock/SystemUtils/issues/8), split into
-per-module tickets #32–#36.
+194 tests in 17 modules, no xfails. `pytest.ini` enables branch coverage, writes
+`coverage.xml` and `test-results.xml`, and fails under **99%** — the current real
+measurement is 99.57%, which meets the 95% `docs/REQUIREMENTS.txt` has asked for
+since 2024. `src/gui.py` is omitted from measurement in `.coveragerc` and named
+as excluded in the summary; see `CLAUDE.md` for why. The gap was closed by epic
+[#8](https://github.com/JeffreyPeacock/SystemUtils/issues/8) and its children
+#32–#36 and #45.
 
 Every run also writes **`.coverage-summary.md`**, which is committed — read it
 for the per-file breakdown rather than trusting a table in a README. As of
-2026-09-04 the gap is concentrated in `reporting` (33%), `file_ops` (41%),
-`utils` (33%) and `gui` (11%, deliberately — see the `†` note in that file).
+2026-09-04 every measured module is at 100% line and branch except `main`, at
+99.2%, whose two remaining statements are uncovered on purpose and named in
+`tests/test_main_dispatch.py`. `gui` is listed there under "Excluded from
+measurement", with the reason.
 
 The floor **only moves up** — raise it in the same PR that raises real coverage.
-Same for the per-module opt-outs in `mypy.ini`: a module leaves the list by being
-annotated, not by loosening the defaults. See
+Same for the per-module opt-outs in `mypy.ini`: a module leaves the list by
+passing `check_untyped_defs`, not by loosening the defaults. `gui` and `main`
+left it in #36; `db`, `file_ops` and `reporting` each need one annotation, named
+in `mypy.ini`. See
 [Development-Principles §4](../docs/Development-Principles.md).
 
 ### Fixtures
@@ -177,14 +182,13 @@ one means adding it to the other.
 ## Backlog
 
 Tracked on the [SystemUtils board](https://github.com/users/JeffreyPeacock/projects/14),
-filtered by `component:file-manager` — 6 open at the time of writing: what is
-left of the coverage gap (epic #8, plus #35 for `utils` and #36 for `main`), the
-two GUI tickets (#3, #11), and #41.
+filtered by `component:file-manager` — **3 open** at the time of writing: #41,
+and the two GUI tickets #3 and #11.
 
 Two are worth reading before relying on this tool for anything destructive:
 
 - **#41** — a file that could not be hashed is reported as a duplicate rather than as unknown, so an I/O error can keep the only copy out of the unique list
 - **#3** — the GUI writes the checkbox object rather than the path, so `rm_commands.txt` is not runnable
 
-The original silent-data-loss paths #1 and #2 are fixed, and so is #43 —
+Three silent-wrong-answer paths are fixed: #1 and #2, and #43 —
 `scan-dir-report` never returned at all until its shutdown was tested.

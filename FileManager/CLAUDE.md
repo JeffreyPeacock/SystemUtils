@@ -20,10 +20,10 @@ points. Its output is a list of files a human may then delete — a wrong answer
 has consequences past this process, which is what makes the correctness notes
 below worth reading before changing anything.
 
-`docs/REQUIREMENTS.txt` is the original specification. Two of its requirements are
-**not met**: the "full featured graphical user-interface" (only a paginated
-Tkinter duplicate list exists) and 95% coverage (actual: **93.11%** — tracked
-by epic #8 and its children #32-#36).
+`docs/REQUIREMENTS.txt` is the original specification. One of its requirements is
+still **not met**: the "full featured graphical user-interface" — only a
+paginated Tkinter duplicate list exists (#11). The 95% coverage requirement is
+**met**, at 99.57%; epic #8 and its children #32-#36 and #45 are closed.
 
 ## Tech Stack
 
@@ -70,15 +70,19 @@ python -m mypy src/
 
 ## Testing
 
-**159 tests across 15 modules, all passing, no xfails.** Coverage is on by default
+**194 tests across 17 modules, all passing, no xfails.** Coverage is on by default
 via `pytest.ini` (`--cov=src --cov-branch`), writes `coverage.xml` and
-`test-results.xml`, and enforces `--cov-fail-under=93` against a measured
-**93.11%** combined line+branch coverage.
+`test-results.xml`, and enforces `--cov-fail-under=99` against a measured
+**99.57%** combined line+branch coverage.
 
 Per-module figures live in `.coverage-summary.md`, regenerated every run and
 committed — read that rather than duplicating a table here that goes stale. As
-of 2026-09-04 `db`, `file_ops`, `reporting` and `md5sum` are at 100% line and
-branch; what is left is `main` 81% (#36) and `utils` 55% (#35).
+as of 2026-09-04 every measured module is at 100% line and branch except
+`main`, at 99.2%/96.6%. The two statements left there are uncovered on purpose
+and named in `tests/test_main_dispatch.py`: `sys.exit(main())` runs only when
+the file is executed as a script, and the fall-through past the last `elif` is
+unreachable because argparse rejects anything outside `choices`. Forcing either
+would assert on a state the CLI cannot produce.
 
 **`src/gui.py` is omitted from measurement**, in `.coveragerc` — coverage.py does
 not read `pytest.ini`, so the omit list cannot live there. It is a Tkinter widget
@@ -95,7 +99,11 @@ ticket.
 **The floor is a ratchet — it only goes up.** Raise `--cov-fail-under` in the
 same PR that raises real coverage; never lower it to make a red build green.
 Same rule for the per-module opt-out stanzas in `mypy.ini`: a module leaves that
-list by being annotated. Reasoning in repo-root `docs/Development-Principles.md` §4.
+list by **passing** `check_untyped_defs`, never by the defaults being loosened.
+`gui` and `main` left it in #36 without needing annotation at all — the stanzas
+had been guarding nothing, which is worth re-testing occasionally rather than
+assuming. The three that remain each fail on one container literal, named in
+`mypy.ini`. Reasoning in repo-root `docs/Development-Principles.md` §4.
 
 Every run writes **`.coverage-summary.md`**, and it is **committed**: overall line and
 branch tables, a per-file breakdown with 🟢/🟡/🔴 badges, and the test counts.
@@ -259,8 +267,11 @@ a list in this file only goes stale. `/priority-review` renders it as a
 priority-ordered table in `FileManager/docs/ticket-priority-review.md` when you
 want it at a glance.
 
-Both original silent-data-loss paths are now fixed — #1 (prefix-anchored
-removal) and #2 (audit-db emptying an unmounted volume). What remains is
-11 open tickets, five of them p2. The coverage work is epic **#8**, which is a
-tracker rather than a unit of work: its children **#32-#36** each carry a
-per-module coverage target and are the things to actually pick up.
+Three silent-wrong-answer paths are fixed — #1 (prefix-anchored removal), #2
+(audit-db emptying an unmounted volume) and #43 (`scan-dir-report` never
+returning). The coverage epic **#8** is closed at 99.57%.
+
+What remains is **3 open tickets**: **#41**, where a file that could not be
+hashed is reported as a duplicate rather than as unknown, so an I/O error can
+keep the only copy out of the unique list; and the two GUI tickets, **#3** and
+**#11**.
