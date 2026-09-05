@@ -8,6 +8,7 @@ import pytest
 
 from src.db import store_file_info
 from src.md5sum import compute_md5
+from src import db
 from src.reporting import report_duplicate_sizes
 
 
@@ -84,3 +85,42 @@ def test_two_separate_groups_are_added_together(db_path, dup_tree, capsys):
     report_duplicate_sizes(db_path)
 
     assert f"{expected:.2f} MB" in capsys.readouterr().out
+
+
+# -- the GB and TB branches ------------------------------------------------
+#
+# These cannot be reached with real files: the smallest total that prints in GB
+# is a gibibyte of duplicates, and in TB a tebibyte. The function reads only
+# `size` and `COUNT(*)` out of the table, so synthetic rows exercise exactly the
+# code path a real multi-terabyte library would -- and the alternative is
+# leaving the unit-selection arithmetic, which is what a human reads off the
+# screen, untested at two of its three settings.
+
+
+def _fake_group(db_path, md5sum, size, copies):
+    """Record `copies` rows sharing one checksum, at a declared size."""
+    def work(conn):
+        for i in range(copies):
+            conn.execute(
+                "INSERT INTO files (path, md5sum, size, last_modified) "
+                "VALUES (?, ?, ?, ?)",
+                (f"/synthetic/{md5sum}/copy-{i}", md5sum, size, 0),
+            )
+    db.with_connection(db_path, work, commit=True, description="seed a fake group")
+
+
+def test_a_gibibyte_of_duplicates_reports_in_GB(db_path, capsys):
+    _fake_group(db_path, "a" * 32, size=3 * 1024 ** 3, copies=2)
+
+    report_duplicate_sizes(db_path)
+
+    assert "3.00 GB" in capsys.readouterr().out
+
+
+def test_a_tebibyte_of_duplicates_reports_in_TB(db_path, capsys):
+    _fake_group(db_path, "b" * 32, size=2 * 1024 ** 4, copies=3)
+
+    report_duplicate_sizes(db_path)
+
+    # Three copies of 2 TiB reclaims two of them.
+    assert "4.00 TB" in capsys.readouterr().out
