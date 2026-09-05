@@ -12,6 +12,28 @@ from src.utils import get_file_mtime_in_ms
 MAX_RETRIES = 10  # Define a global variable for the number of retries
 RETRY_DELAY = 0.1  # Delay between retries in seconds
 
+# Statuses written to the .processed_files.txt resume log. Only the first two
+# are verdicts; UNREADABLE records that the question could not be answered, and
+# is deliberately NOT treated as processed on a later run.
+STATUS_UNIQUE = "unique"
+STATUS_NOT_UNIQUE = "not_unique"
+STATUS_UNREADABLE = "unreadable"
+VERDICT_STATUSES = frozenset({STATUS_UNIQUE, STATUS_NOT_UNIQUE})
+
+
+class UniquenessUnknown(Exception):
+    """The file's uniqueness could not be determined.
+
+    Raised rather than returned because there is no safe value to return. This
+    function used to answer False here, and False means "not unique" -- the same
+    answer as a file that genuinely has a copy elsewhere, which is how a file
+    whose only fault was an I/O error ended up excluded from the keep list (#41).
+
+    A sentinel return would be no better: `None` is falsy, so any caller writing
+    `if is_file_unique(...)` would silently reproduce the same wrong answer.
+    Raising makes the third outcome impossible to ignore by accident.
+    """
+
 
 def with_connection(db_path, work, *, commit=False, description="query"):
     """Open `db_path`, run `work(conn)`, close it, retrying while SQLite is locked.
@@ -524,13 +546,16 @@ def scan_and_report_unique_files(directory, db_path, num_threads=4):
         num_threads (int): The number of threads to use for concurrent processing.
 
     Returns:
-        list: A list of unique file paths.
+        list: A list of unique file paths. Files that could not be read are not
+            in it, and are not counted as duplicates either -- they are logged
+            as `unreadable` and retried on the next run.
     """
     if not os.path.isdir(directory):
         raise ValueError(f"Invalid directory: {directory}")
 
     temp_file_path = os.path.join(directory, ".processed_files.txt")
     processed_files = {}
+    answered = set()
 
     # Load already processed files and their statuses from the temp file
     if os.path.exists(temp_file_path):
@@ -539,20 +564,33 @@ def scan_and_report_unique_files(directory, db_path, num_threads=4):
             for line in temp_file:
                 file_path, status = line.strip().split("\t")
                 processed_files[file_path] = status
+                # Only a verdict counts as answered. An `unreadable` row records
+                # that the question was asked and could not be answered, so the
+                # next run asks again -- a permission or a mount usually differs
+                # between runs, and skipping forever would make one bad read
+                # permanent (#41).
+                if status in VERDICT_STATUSES:
+                    answered.add(file_path)
         print("Previously processed files:")
         for file_path, status in processed_files.items():
             print(f"{file_path}\t{status}")
 
     unique_files = []
+    unreadable_files = []
 
     def process_file(file_path):
+        if file_path in answered:
+            return None, None
         try:
-            if file_path not in processed_files:
-                is_unique = is_file_unique(file_path, db_path)
-                return file_path, "unique" if is_unique else "not_unique"
+            is_unique = is_file_unique(file_path, db_path)
+        except UniquenessUnknown as e:
+            # Recorded, not silently dropped and not called a duplicate.
+            logging.warning(f"UNREADABLE: {file_path} ({e})")
+            return file_path, STATUS_UNREADABLE
         except Exception as e:
             logging.error(f"Error processing file {file_path}: {e}")
-        return None, None
+            return None, None
+        return file_path, STATUS_UNIQUE if is_unique else STATUS_NOT_UNIQUE
 
     # Collect all file paths
     file_paths = [
@@ -570,9 +608,11 @@ def scan_and_report_unique_files(directory, db_path, num_threads=4):
                 file_path, status = future.result()
                 if file_path and status:
                     processed_files[file_path] = status
-                    if status == "unique":
+                    if status == STATUS_UNIQUE:
                         unique_files.append(file_path)
                         print(f"Unique file found: {file_path}")
+                    elif status == STATUS_UNREADABLE:
+                        unreadable_files.append(file_path)
                     temp_file.write(f"{file_path}\t{status}\n")
                     temp_file.flush()  # Ensure data is written to disk immediately
                     # print(".", end="", flush=True)  # Indicate progress
@@ -580,6 +620,19 @@ def scan_and_report_unique_files(directory, db_path, num_threads=4):
 
     print()  # Move to the next line after processing
     logging.info(f"Unique files found: {len(unique_files)}")
+    if unreadable_files:
+        # Said out loud, because the answer for these files is "we do not know"
+        # and the caller is about to treat the returned list as complete.
+        logging.warning(
+            f"{len(unreadable_files)} file(s) could not be read and are in "
+            f"NEITHER list -- they are not known to be unique and not known to "
+            f"be duplicates. Recorded as '{STATUS_UNREADABLE}' and retried next "
+            f"run."
+        )
+        for path in unreadable_files[:10]:
+            logging.warning(f"  UNREADABLE: {path}")
+        if len(unreadable_files) > 10:
+            logging.warning(f"  ... and {len(unreadable_files) - 10} more")
     return unique_files
 
 
@@ -592,7 +645,13 @@ def is_file_unique(file_path, db_path):
         db_path (str): The path to the database file.
 
     Returns:
-        bool: True if the file is unique, False otherwise.
+        bool: True if no other recorded file shares its checksum, False if one
+            does.
+
+    Raises:
+        ValueError: if `file_path` is not a file.
+        UniquenessUnknown: if the checksum or the lookup failed, so neither
+            answer is available. Never returns False for this case -- see #41.
     """
     if not os.path.isfile(file_path):
         raise ValueError(f"Invalid file path: {file_path}")
@@ -600,7 +659,9 @@ def is_file_unique(file_path, db_path):
     try:
         md5sum = compute_md5(file_path)
         duplicates = check_for_duplicates(db_path, md5sum)
-        return len(duplicates) == 0  # Unique if no duplicates are found
     except Exception as e:
-        logging.error(f"Error checking uniqueness for file {file_path}: {e}")
-        return False
+        logging.error(f"Cannot determine uniqueness of {file_path}: {e}")
+        raise UniquenessUnknown(
+            f"cannot determine whether {file_path} is unique: {e}"
+        ) from e
+    return len(duplicates) == 0  # Unique if no duplicates are found

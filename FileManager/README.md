@@ -90,7 +90,7 @@ worth reading first. The full list is in `CLAUDE.md`.
 - **`remove-record` is literal by default.** `--regex` opts in, and the pattern must match the whole path, so deleting a subtree is explicit: `'/a/b/.*'`.
 - **`--min-duplicates` counts copies** — the default is 2, meaning a file and at least one other like it. It was off by one until #6.
 - **`scan-unique-files` writes `.processed_files.txt` into the directory it is scanning** as a resume log. Delete it to force a full recheck. The log lands inside the scanned tree, so the next run finds and checks it like any other file.
-- **`is_file_unique` reports a file it could not read as a duplicate**, not as unknown — so an I/O error during hashing keeps a genuinely unique file out of the output. Open as #41.
+- **A file `scan-unique-files` could not read is in neither list.** It is not called unique and not called a duplicate; it is logged as `unreadable` and re-checked on the next run, and the run warns how many there were (#41).
 - **The `fm-*.sh` wrappers run whichever checkout they live in**, resolved from `BASH_SOURCE`, with the interpreter from `.python-version` via `pyenv exec`. They used to `cd` to an older copy with its own `.venv`, so fixes never reached the scheduled scans (#9); `tests/test_script_conventions.py` now fails any wrapper that hard-codes a path or activates a `.venv`.
 
 ---
@@ -141,14 +141,14 @@ Python 3.14.7 via the `sys-utils` pyenv-virtualenv, then
 `pip install -r requirements-dev.txt`.
 
 ```bash
-python -m pytest              # 194 tests; coverage on, floor enforced
+python -m pytest              # 201 tests; coverage on, floor enforced
 python -m pytest --no-cov -q  # faster while iterating
 python -m mypy src/           # must be clean
 ```
 
 ### Testing
 
-194 tests in 17 modules, no xfails. `pytest.ini` enables branch coverage, writes
+201 tests in 17 modules, no xfails. `pytest.ini` enables branch coverage, writes
 `coverage.xml` and `test-results.xml`, and fails under **99%** — the current real
 measurement is 99.57%, which meets the 95% `docs/REQUIREMENTS.txt` has asked for
 since 2024. `src/gui.py` is omitted from measurement in `.coveragerc` and named
@@ -182,13 +182,13 @@ one means adding it to the other.
 ## Backlog
 
 Tracked on the [SystemUtils board](https://github.com/users/JeffreyPeacock/projects/14),
-filtered by `component:file-manager` — **3 open** at the time of writing: #41,
-and the two GUI tickets #3 and #11.
+filtered by `component:file-manager` — **2 open** at the time of writing, both
+about the GUI: #3 and #11.
 
-Two are worth reading before relying on this tool for anything destructive:
+One is worth reading before relying on this tool for anything destructive:
 
-- **#41** — a file that could not be hashed is reported as a duplicate rather than as unknown, so an I/O error can keep the only copy out of the unique list
 - **#3** — the GUI writes the checkbox object rather than the path, so `rm_commands.txt` is not runnable
 
-Three silent-wrong-answer paths are fixed: #1 and #2, and #43 —
-`scan-dir-report` never returned at all until its shutdown was tested.
+Four silent-wrong-answer paths are fixed: #1 and #2; #43, where
+`scan-dir-report` never returned at all until its shutdown was tested; and #41,
+where a file that could not be read was reported as a duplicate.

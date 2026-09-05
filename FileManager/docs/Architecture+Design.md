@@ -323,3 +323,41 @@ configuration is worse than one that is occasionally absent — a stale report i
 one is noticed. `CLAUDE.md` had claimed this behaviour all along; it was the code that disagreed.
 
 **Related issues:** #45
+
+---
+
+## "Could not check" is a third outcome, and it needs its own channel
+
+**Problem.** `is_file_unique` answered `False` whenever hashing or the database lookup raised.
+`False` is not "I could not tell" — it is a verdict, the same one returned for a file that genuinely
+has a copy elsewhere. `scan-unique-files` reports the files with no copy anywhere, so an unreadable
+file dropped out of that list on the strength of an answer nobody had. Read the output as "these are
+the ones to keep" and the sole copy of a file goes, because of one I/O error while it was being
+hashed (#41).
+
+**Decision.** A dedicated exception, `UniquenessUnknown`, raised in place of the swallowed
+`return False`.
+
+**Why not a sentinel return.** `None` is falsy. Any caller writing `if is_file_unique(path, db):`
+would reproduce the original defect exactly, and the code would look correct. An exception cannot be
+ignored by accident, which is the whole property being bought. A test asserts the function's own
+docstring still documents the third outcome, so a later refactor toward "a return value would be
+tidier" fails rather than quietly succeeding.
+
+**What the scan does with it.** `scan_and_report_unique_files` records `unreadable` in
+`.processed_files.txt` — a status distinct from both verdicts — leaves the file out of the returned
+list, and logs a warning naming the count, because the caller is about to treat that list as
+complete.
+
+**The resume log now distinguishes answered from asked.** Only `unique` and `not_unique` count as
+processed. An `unreadable` row records that the question was asked and could not be answered, so the
+next run asks again. The log exists to avoid repeating work, but repeating a question that was never
+answered *is* the work — and permissions and mounts routinely differ between runs, so treating one
+bad read as final would make it permanent.
+
+**Related:** user-level `~/.claude/CLAUDE.md`, whose rule this is a direct instance of — a check has
+three outcomes, and `CANNOT CHECK` must never collapse into `OK`. It is the same failure as #2,
+where a missing mount point was read as a mass deletion, and the same reasoning that gives `audit-db`
+its `SUSPECT` state.
+
+**Related issues:** #41, #33, #2
