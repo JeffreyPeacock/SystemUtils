@@ -240,9 +240,15 @@ def run_cli(capsys, monkeypatch):
 
 
 def pytest_sessionfinish(session, exitstatus):
-    """Write .coverage-summary.md after every run that produced coverage.xml.
+    """Write .coverage-summary.md after every run that measured coverage.
 
-    Returns early when coverage.xml is absent, so `--no-cov` runs are unaffected.
+    Two ways to decline, and both are needed. `--no-cov` measured nothing, so
+    there is no new data -- but coverage.xml is left over from the previous run
+    and reading it would rewrite the summary from stale numbers, which is worse
+    than not writing one. That happened: a `--no-cov` run regenerated the
+    summary against a coverage.xml produced under a different `.coveragerc`,
+    and the committed report then disagreed with the configuration it claims to
+    describe. The second check is the ordinary one: no coverage.xml at all.
 
     It writes the file and deliberately does NOT open an editor: this hook runs
     on every session, including CI and any pre-commit hook, and launching one
@@ -250,6 +256,9 @@ def pytest_sessionfinish(session, exitstatus):
     `cat FileManager/.coverage-summary.md`.
     """
     import subprocess
+
+    if getattr(session.config.option, "no_cov", False):
+        return
 
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     coverage_xml = os.path.join(root, "coverage.xml")

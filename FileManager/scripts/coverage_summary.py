@@ -11,26 +11,46 @@ Usage:
     coverage_summary.py <coverage.xml> <output.md> [test-results.xml]
 """
 
+import configparser
 import os
 import sys
 import xml.etree.ElementTree as ET
 
-# Files that are deliberately below full coverage, with the reason. Rendered as
-# a dagger next to the name plus a footnote, so a low number reads as a decision
-# rather than as neglect -- and so the next person does not re-derive it.
+# Why each omitted file is omitted. The LIST of omitted files is not repeated
+# here -- it is read out of .coveragerc, which is the one place it is declared,
+# so the two cannot drift apart. This dict only supplies the reason.
 #
-# Only claim "covered elsewhere" where that is true. If the honest answer is
-# "this should be restructured so it CAN be tested", say that instead.
-COVERAGE_NOTES = {
+# A file omitted with no reason recorded here is reported as exactly that,
+# loudly, rather than quietly disappearing from the report. An exclusion nobody
+# can see is indistinguishable from a module that was never written.
+EXCLUSION_REASONS = {
     "gui": (
         "A Tkinter widget tree and a `mainloop()`. Unit-testing widget "
-        "construction asserts on the library rather than on this code, so the "
-        "shell stays uncovered on purpose. The part that *is* worth testing -- "
+        "construction asserts on the library rather than on this code. It was "
+        "measured until #45, where it capped the total near 88% -- 82 of 601 "
+        "statements -- putting the 95% in `docs/REQUIREMENTS.txt` out of reach "
+        "however well the rest was tested. The part that *is* worth testing -- "
         "which selected rows map to which paths -- should be extracted out of "
-        "the widget code and tested there; that is tracked in #3, which fixes "
-        "the same function. This note should shrink when #3 lands, not grow."
+        "the widget code, which is #3. When it is, it lands in a module that "
+        "**is** measured; this list does not grow to follow it."
     ),
 }
+
+
+def omitted_files(root):
+    """The `omit` list from .coveragerc, as module names.
+
+    Read rather than duplicated: coverage.py acts on that file, so anything
+    written here instead would be a second copy free to disagree with the one
+    that matters.
+    """
+    config = os.path.join(root, ".coveragerc")
+    if not os.path.exists(config):
+        return []
+    parser = configparser.ConfigParser()
+    parser.read(config)
+    raw = parser.get("run", "omit", fallback="")
+    return [module_name(line.strip()) for line in raw.splitlines() if line.strip()]
 
 
 def pct(covered: int, total: int) -> float:
@@ -148,25 +168,44 @@ def main() -> None:
             "| File | Lines | Line % | Branches | Branch % |",
             "|------|------:|-------:|---------:|---------:|"]
 
-    noted = []
     for name, hit, lines, bhit, branches in rows:
         lp = pct(hit, lines)
         bp = pct(bhit, branches)
-        dagger = ""
-        if name in COVERAGE_NOTES:
-            dagger = " †"
-            noted.append(name)
         out.append(
-            f"| {badge(lp)} `{name}`{dagger} | {hit}/{lines} | {lp:.1f}% | "
+            f"| {badge(lp)} `{name}` | {hit}/{lines} | {lp:.1f}% | "
             f"{bhit}/{branches} | {bp:.1f}% |"
         )
 
-    if noted:
-        out += ["", "---", "", "## Coverage notes", "",
-                "**†** — intentionally below full coverage; the reason is recorded, "
-                "**not** an unexamined gap:", ""]
-        for name in noted:
-            out.append(f"- **`{name}` †** — {COVERAGE_NOTES[name]}")
+    # An omitted file is listed by name, not left out. A module that simply
+    # vanishes from the report is indistinguishable from one nobody wrote, and
+    # the next person adding a file of the same kind would not know a rule
+    # exists. The table above is the measured set; this is what it leaves out
+    # and why.
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    omitted = omitted_files(root)
+    measured = {name for name, *_ in rows}
+    if omitted:
+        out += ["", "---", "", "## Excluded from measurement", "",
+                "Omitted in `.coveragerc`, so the totals above do **not** count "
+                "these. Excluding a file is a decision with a ticket, never a way "
+                "to move a number:", ""]
+        for name in omitted:
+            reason = EXCLUSION_REASONS.get(name)
+            if reason is None:
+                out.append(
+                    f"- **`{name}`** — ⚠️ **excluded with no reason recorded.** "
+                    f"Add one to `EXCLUSION_REASONS` in "
+                    f"`scripts/coverage_summary.py`, or stop omitting it in "
+                    f"`.coveragerc`."
+                )
+            else:
+                out.append(f"- **`{name}`** — {reason}")
+            if name in measured:
+                out.append(
+                    f"  - ⚠️ **but `{name}` still appears in the measured table "
+                    f"above.** `.coveragerc` and the report disagree; the omit "
+                    f"is not taking effect."
+                )
 
     out.append("")
     with open(output_path, "w", encoding="utf-8") as handle:
