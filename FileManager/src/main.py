@@ -67,7 +67,9 @@ def usage():
         --dirB              Path to the second directory for comparison (required for
                             compare-directories action).
         --use-gui           Use GUI for displaying duplicates.
-        --min-duplicates    Minimum number of duplicates to search for (default: 1).
+        --min-duplicates    Report only checksums held by at least this many files
+                            (default: 2). Counts copies, not copies beyond the
+                            first -- 2 means a file and one other like it.
         --exclude-prefix    Comma-separated list of prefixes to exclude paths from processing during audit-db.
         --regex             Treat remove-record's <path> as a regex matched against
                             the whole path. Without it the path is taken literally.
@@ -165,8 +167,8 @@ def main():
         help='Number of threads to use for concurrent operations'
     )
     parser.add_argument(
-        '--min-duplicates', type=int, default=1,
-        help='Minimum number of duplicates to search for'
+        '--min-duplicates', type=int, default=2,
+        help='Report only checksums held by at least this many files (default: 2)'
     )
     parser.add_argument(
         '--dirA', help='Path to the first directory for comparison'

@@ -77,7 +77,7 @@ def scan_dir_report(path, db_path, num_threads):
     producer_thread.join()
     file_queue.join()
 
-def report_duplicates(db_path, min_duplicates=1):
+def report_duplicates(db_path, min_duplicates=2):
     duplicates = find_duplicates_with_min_count(db_path, min_duplicates)
     if duplicates:
         return duplicates
