@@ -13,6 +13,69 @@ MAX_RETRIES = 10  # Define a global variable for the number of retries
 RETRY_DELAY = 0.1  # Delay between retries in seconds
 
 
+def with_connection(db_path, work, *, commit=False, description="query"):
+    """Open `db_path`, run `work(conn)`, close it, retrying while SQLite is locked.
+
+    This is the only place in the project that calls `sqlite3.connect`, which is
+    what #10 is about. Before it, the retry loop was copied into each writer and
+    the readers had none at all -- so a report run alongside a scan raised
+    `database is locked` instead of waiting, and any change to connection
+    handling (a pragma, a timeout, a pool) had to be made in ten places or it
+    was only half applied.
+
+    Only "database is locked" is retried. Every other OperationalError is
+    re-raised untouched: retrying a malformed statement ten times just delays
+    the error by a second.
+
+    Args:
+        db_path (str): The path to the database file.
+        work (callable): Given the open connection; its return value is returned.
+            It must not return a cursor or any other lazy handle -- the
+            connection is closed before this function returns.
+        commit (bool): Commit before closing. Writers pass True.
+        description (str): Named in the log line and in the final error.
+
+    Returns:
+        Whatever `work` returned.
+
+    Raises:
+        sqlite3.OperationalError: after MAX_RETRIES attempts all found the
+            database locked.
+    """
+    last_error = None
+    for attempt in range(1, MAX_RETRIES + 1):
+        conn = None
+        try:
+            conn = sqlite3.connect(db_path)
+            result = work(conn)
+            if commit:
+                conn.commit()
+            return result
+        except sqlite3.OperationalError as e:
+            if "database is locked" not in str(e):
+                raise
+            last_error = e
+            logging.warning(
+                f"Database is locked, retrying {description}... "
+                f"({attempt}/{MAX_RETRIES})"
+            )
+            time.sleep(RETRY_DELAY)
+        finally:
+            if conn is not None:
+                conn.close()
+    raise sqlite3.OperationalError(
+        f"Failed to {description} after {MAX_RETRIES} retries due to database "
+        f"lock: {last_error}"
+    )
+
+
+def _read_all(db_path, sql, params=(), *, description="read"):
+    """Every row of one read query, through `with_connection`."""
+    def work(conn):
+        return conn.execute(sql, params).fetchall()
+    return with_connection(db_path, work, description=description)
+
+
 def initialize_db(db_path):
     """
     Initialize the database by creating the necessary tables if they do not exist.
@@ -20,19 +83,17 @@ def initialize_db(db_path):
     Args:
         db_path (str): The path to the database file.
     """
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS files (
-            id INTEGER PRIMARY KEY,
-            md5sum TEXT,
-            size INTEGER,
-            last_modified INTEGER,
-            path TEXT UNIQUE
-        )
-    ''')
-    conn.commit()
-    conn.close()
+    def work(conn):
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS files (
+                id INTEGER PRIMARY KEY,
+                md5sum TEXT,
+                size INTEGER,
+                last_modified INTEGER,
+                path TEXT UNIQUE
+            )
+        ''')
+    with_connection(db_path, work, commit=True, description="initialize the database")
 
 def get_file_info(db_path, file_path):
     """
@@ -45,14 +106,13 @@ def get_file_info(db_path, file_path):
     Returns:
         tuple: A tuple containing the size and last modified time of the file, or None if the file is not found.
     """
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    cursor.execute('''
-        SELECT size, last_modified FROM files WHERE path = ?
-    ''', (file_path,))
-    result = cursor.fetchone()
-    conn.close()
-    return result
+    rows = _read_all(
+        db_path,
+        "SELECT size, last_modified FROM files WHERE path = ?",
+        (file_path,),
+        description="read file info",
+    )
+    return rows[0] if rows else None
 
 def get_all_files_info(db_path):
     """
@@ -64,12 +124,11 @@ def get_all_files_info(db_path):
     Returns:
         list: A list of tuples, each containing the file path, size, and last modified time.
     """
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    cursor.execute("SELECT path, size, last_modified FROM files")
-    files_info = cursor.fetchall()
-    conn.close()
-    return files_info
+    return _read_all(
+        db_path,
+        "SELECT path, size, last_modified FROM files",
+        description="read all file info",
+    )
 
 def store_file_info(db_path, path, md5sum):
     """
@@ -82,29 +141,14 @@ def store_file_info(db_path, path, md5sum):
     """
     size = os.path.getsize(path)
     last_modified = get_file_mtime_in_ms(path)  # Use the utility function
-    retries = MAX_RETRIES
-    while retries > 0:
-        try:
-            conn = sqlite3.connect(db_path)
-            cursor = conn.cursor()
-            cursor.execute('''
-                INSERT INTO files (path, md5sum, size, last_modified) VALUES (?, ?, ?, ?)
-                ON CONFLICT(path) DO UPDATE SET md5sum=excluded.md5sum, size=excluded.size, last_modified=excluded.last_modified
-            ''', (path, md5sum, size, last_modified))
-            conn.commit()
-            conn.close()
-            break
-        except sqlite3.OperationalError as e:
-            if "database is locked" in str(e):
-                retries -= 1
-                time.sleep(0.1)  # Wait for 100ms before retrying
-            else:
-                raise
-        finally:
-            if conn:
-                conn.close()
-    if retries == 0:
-        raise Exception(f"Failed to store file info for {path} after {MAX_RETRIES} retries due to database lock")
+    def work(conn):
+        conn.execute('''
+            INSERT INTO files (path, md5sum, size, last_modified) VALUES (?, ?, ?, ?)
+            ON CONFLICT(path) DO UPDATE SET md5sum=excluded.md5sum, size=excluded.size, last_modified=excluded.last_modified
+        ''', (path, md5sum, size, last_modified))
+
+    with_connection(db_path, work, commit=True,
+                    description=f"store file info for {path}")
 
 def remove_record(db_path, file_path):
     """
@@ -117,29 +161,11 @@ def remove_record(db_path, file_path):
     Returns:
         int: The number of records deleted -- 0 or 1, since path is UNIQUE.
     """
-    retries = MAX_RETRIES
-    deleted_count = 0
-    while retries > 0:
-        try:
-            conn = sqlite3.connect(db_path)
-            cursor = conn.cursor()
-            cursor.execute("DELETE FROM files WHERE path = ?", (file_path,))
-            deleted_count = cursor.rowcount
-            conn.commit()
-            conn.close()
-            break
-        except sqlite3.OperationalError as e:
-            if "database is locked" in str(e):
-                retries -= 1
-                time.sleep(0.1)  # Wait for 100ms before retrying
-            else:
-                raise
-        finally:
-            if conn:
-                conn.close()
-    if retries == 0:
-        raise Exception(f"Failed to remove file info for {file_path} after {MAX_RETRIES} retries due to database lock")
-    return deleted_count
+    def work(conn):
+        return conn.execute("DELETE FROM files WHERE path = ?", (file_path,)).rowcount
+
+    return with_connection(db_path, work, commit=True,
+                           description=f"remove the record for {file_path}")
 
 
 def remove_records_by_regex(db_path, regex_pattern):
@@ -159,33 +185,17 @@ def remove_records_by_regex(db_path, regex_pattern):
     Returns:
         int: The number of records deleted.
     """
-    retries = MAX_RETRIES
-    deleted_count = 0
-    while retries > 0:
-        try:
-            conn = sqlite3.connect(db_path)
-            cursor = conn.cursor()
-            cursor.execute("SELECT path FROM files")
-            all_paths = cursor.fetchall()
-            matching_paths = [path[0] for path in all_paths if re.fullmatch(regex_pattern, path[0])]
-            deleted_count = len(matching_paths)
-            if matching_paths:
-                cursor.executemany("DELETE FROM files WHERE path = ?", [(path,) for path in matching_paths])
-                conn.commit()
-            conn.close()
-            break
-        except sqlite3.OperationalError as e:
-            if "database is locked" in str(e):
-                retries -= 1
-                time.sleep(0.1)
-            else:
-                raise
-        finally:
-            if conn:
-                conn.close()
-    if retries == 0:
-        raise Exception(f"Failed to remove file info matching pattern '{regex_pattern}' after {MAX_RETRIES} retries due to database lock")
-    return deleted_count
+    def work(conn):
+        all_paths = conn.execute("SELECT path FROM files").fetchall()
+        matching_paths = [path[0] for path in all_paths
+                          if re.fullmatch(regex_pattern, path[0])]
+        if matching_paths:
+            conn.executemany("DELETE FROM files WHERE path = ?",
+                             [(path,) for path in matching_paths])
+        return len(matching_paths)
+
+    return with_connection(db_path, work, commit=True,
+                           description=f"remove records matching '{regex_pattern}'")
 def get_md5_by_path(db_path, file_path):
     """
     Retrieve the MD5 checksum of a file from the database.
@@ -197,14 +207,13 @@ def get_md5_by_path(db_path, file_path):
     Returns:
         str: The MD5 checksum of the file, or None if the file is not found.
     """
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    cursor.execute('''
-        SELECT md5sum FROM files WHERE path = ?
-    ''', (file_path,))
-    result = cursor.fetchone()
-    conn.close()
-    return result[0] if result else None
+    rows = _read_all(
+        db_path,
+        "SELECT md5sum FROM files WHERE path = ?",
+        (file_path,),
+        description="read a checksum",
+    )
+    return rows[0][0] if rows else None
 
 def check_for_duplicates(db_path, md5sum):
     """
@@ -217,14 +226,12 @@ def check_for_duplicates(db_path, md5sum):
     Returns:
         list: A list of file paths that have the same MD5 checksum.
     """
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    cursor.execute('''
-        SELECT path FROM files WHERE md5sum = ?
-    ''', (md5sum,))
-    duplicates = cursor.fetchall()
-    conn.close()
-    return duplicates
+    return _read_all(
+        db_path,
+        "SELECT path FROM files WHERE md5sum = ?",
+        (md5sum,),
+        description="check for duplicates",
+    )
 
 def find_duplicates_with_min_count(db_path, min_count=1):
     """
@@ -240,8 +247,6 @@ def find_duplicates_with_min_count(db_path, min_count=1):
     Returns:
         dict: keys are MD5 checksums, values are lists of paths sharing it.
     """
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
     # One row per (checksum, path), rather than GROUP_CONCAT joined server-side.
     #
     # This used to select GROUP_CONCAT(path) and split the result on ",". A
@@ -250,25 +255,133 @@ def find_duplicates_with_min_count(db_path, min_count=1):
     # reported names that do not exist and omitted the real one (#5). SQLite
     # offers no way to escape the separator, and no delimiter is safe against
     # arbitrary paths, so the grouping is done in Python instead.
-    cursor.execute('''
+    rows = _read_all(
+        db_path,
+        '''
         SELECT md5sum, path FROM files
         WHERE md5sum IN (
             SELECT md5sum FROM files
             GROUP BY md5sum HAVING COUNT(*) > ?
         )
         ORDER BY md5sum
-    ''', (min_count,))
+        ''',
+        (min_count,),
+        description="find duplicates",
+    )
 
     duplicates = {}
-    while True:
-        rows = cursor.fetchmany(1000)
-        if not rows:
-            break
-        for md5sum, path in rows:
-            duplicates.setdefault(md5sum, []).append(path)
-
-    conn.close()
+    for md5sum, path in rows:
+        duplicates.setdefault(md5sum, []).append(path)
     return duplicates
+
+
+def count_duplicates_per_path(db_path):
+    """(path, count) for every path whose checksum is shared with another file.
+
+    Args:
+        db_path (str): The path to the database file.
+
+    Returns:
+        list: (path, duplicate_count) tuples.
+    """
+    return _read_all(
+        db_path,
+        '''
+        SELECT path, COUNT(*) as duplicate_count FROM files
+        WHERE md5sum IN (
+            SELECT md5sum FROM files
+            GROUP BY md5sum HAVING COUNT(*) > 1
+        )
+        GROUP BY path
+        ''',
+        description="count duplicates per path",
+    )
+
+
+def duplicate_group_sizes(db_path):
+    """One (size, count) row per duplicated checksum.
+
+    MIN(size) rather than size: files sharing an MD5 have the same length, so
+    the aggregate picks the one value the group has.
+
+    Args:
+        db_path (str): The path to the database file.
+
+    Returns:
+        list: (size, count) tuples, one per checksum held by two or more files.
+    """
+    return _read_all(
+        db_path,
+        '''
+        SELECT MIN(size), COUNT(*) FROM files
+        GROUP BY md5sum HAVING COUNT(*) > 1
+        ''',
+        description="read duplicate group sizes",
+    )
+
+
+def count_paths_with_prefix(db_path, prefix):
+    """How many recorded paths start with `prefix`.
+
+    Args:
+        db_path (str): The path to the database file.
+        prefix (str): The leading portion of the path to match.
+
+    Returns:
+        int: The number of matching rows.
+    """
+    rows = _read_all(
+        db_path,
+        "SELECT COUNT(*) FROM files WHERE path LIKE ?",
+        (f"{prefix}%",),
+        description="count paths with a prefix",
+    )
+    return rows[0][0]
+
+
+def list_paths_with_prefix(db_path, prefix):
+    """Every recorded path starting with `prefix`.
+
+    Args:
+        db_path (str): The path to the database file.
+        prefix (str): The leading portion of the path to match.
+
+    Returns:
+        list: The matching paths.
+    """
+    rows = _read_all(
+        db_path,
+        "SELECT path FROM files WHERE path LIKE ?",
+        (f"{prefix}%",),
+        description="list paths with a prefix",
+    )
+    return [row[0] for row in rows]
+
+
+def find_duplicates_under_prefix(db_path, prefix):
+    """Checksums held by more than one path, restricted to paths under `prefix`.
+
+    The grouping is done here rather than in SQL for the same reason as
+    `find_duplicates_with_min_count`: a comma is legal in a filename, so
+    GROUP_CONCAT cannot be split back apart safely (#5).
+
+    Args:
+        db_path (str): The path to the database file.
+        prefix (str): The leading portion of the path to match.
+
+    Returns:
+        dict: keys are MD5 checksums, values are lists of paths sharing it.
+    """
+    rows = _read_all(
+        db_path,
+        "SELECT md5sum, path FROM files WHERE path LIKE ?",
+        (f"{prefix}%",),
+        description="find duplicates under a prefix",
+    )
+    md5_to_paths = {}
+    for md5sum, path in rows:
+        md5_to_paths.setdefault(md5sum, []).append(path)
+    return {md5sum: paths for md5sum, paths in md5_to_paths.items() if len(paths) > 1}
 
 
 def looks_like_a_missing_volume(file_path):
@@ -352,40 +465,24 @@ def audit_db(db_path, num_threads, process_file, exclude_prefix=None,
                     process_file(file_path, db_path)
         processed_files_count += 1
 
-    retries = MAX_RETRIES
-    while retries > 0:
-        try:
-            conn = sqlite3.connect(db_path)
-            cursor = conn.cursor()
-            cursor.execute("PRAGMA journal_mode=WAL")  # Enable WAL mode
-            cursor.execute("SELECT path, size, last_modified FROM files")
+    def work(conn):
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA journal_mode=WAL")  # Enable WAL mode
+        cursor.execute("SELECT path, size, last_modified FROM files")
 
-            with ThreadPoolExecutor(max_workers=num_threads) as executor:
-                while True:
-                    batch = cursor.fetchmany(batch_size)
-                    if not batch:
-                        break
-                    futures = [executor.submit(process_file_info, file_info) for file_info in batch]
-                    for future in as_completed(futures):
-                        try:
-                            future.result()
-                        except Exception as e:
-                            logging.error(f"Error processing file info: {e}")
+        with ThreadPoolExecutor(max_workers=num_threads) as executor:
+            while True:
+                batch = cursor.fetchmany(batch_size)
+                if not batch:
+                    break
+                futures = [executor.submit(process_file_info, file_info) for file_info in batch]
+                for future in as_completed(futures):
+                    try:
+                        future.result()
+                    except Exception as e:
+                        logging.error(f"Error processing file info: {e}")
 
-            conn.close()
-            break
-        except sqlite3.OperationalError as e:
-            if "database is locked" in str(e):
-                retries -= 1
-                logging.warning(f"Database is locked, retrying... ({MAX_RETRIES - retries}/{MAX_RETRIES})")
-                time.sleep(RETRY_DELAY)
-            else:
-                raise
-        finally:
-            if conn:
-                conn.close()
-    if retries == 0:
-        raise Exception(f"Failed to audit database after {MAX_RETRIES} retries due to database lock")
+    with_connection(db_path, work, description="audit the database")
 
     # This summary used to sit after the `raise` above, so it never ran and the
     # total was never reported.

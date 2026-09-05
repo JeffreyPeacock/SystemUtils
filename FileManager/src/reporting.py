@@ -1,24 +1,24 @@
 import logging
 import os
-import sqlite3
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from queue import Queue
 
-from src.db import check_for_duplicates, find_duplicates_with_min_count
+# No `sqlite3` import here on purpose. Every query in this module goes through
+# src/db.py, which owns the schema, the connection and the lock-retry loop
+# (#10). tests/test_db_is_the_only_connection.py pins that.
+from src.db import (
+    check_for_duplicates,
+    count_duplicates_per_path,
+    count_paths_with_prefix,
+    duplicate_group_sizes,
+    find_duplicates_under_prefix,
+    find_duplicates_with_min_count,
+    list_paths_with_prefix,
+)
 from src.file_ops import process_file
 from src.md5sum import compute_md5
 from src.utils import get_files_with_md5
-
-
-import logging
-import os
-import threading
-from concurrent.futures import ThreadPoolExecutor
-from queue import Queue
-from src.db import check_for_duplicates
-from src.file_ops import process_file
-from src.md5sum import compute_md5
 
 def scan_dir_report(path, db_path, num_threads):
     """
@@ -91,18 +91,7 @@ def report_files_with_more_than_1_duplicate(db_path):
     Args:
         db_path (str): The path to the database file.
     """
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    cursor.execute('''
-        SELECT path, COUNT(*) as duplicate_count FROM files
-        WHERE md5sum IN (
-            SELECT md5sum FROM files
-            GROUP BY md5sum HAVING COUNT(*) > 1
-        )
-        GROUP BY path
-    ''')
-    results = cursor.fetchall()
-    conn.close()
+    results = count_duplicates_per_path(db_path)
 
     if results:
         print("Files with more than 1 duplicate:")
@@ -131,16 +120,9 @@ def report_duplicate_sizes(db_path):
     Args:
         db_path (str): The path to the database file.
     """
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
     # One row per duplicated checksum: the size of a single copy and how many
     # copies exist. Summing size * (n - 1) leaves one copy of each intact.
-    cursor.execute('''
-        SELECT MIN(size), COUNT(*) FROM files
-        GROUP BY md5sum HAVING COUNT(*) > 1
-    ''')
-    groups = cursor.fetchall()
-    conn.close()
+    groups = duplicate_group_sizes(db_path)
 
     reclaimable = sum(size * (count - 1) for size, count in groups if size is not None)
 
@@ -164,13 +146,7 @@ def report_prefix_count(db_path, prefix):
         db_path (str): The path to the database file.
         prefix (str): The prefix to match files.
     """
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    cursor.execute('''
-        SELECT COUNT(*) FROM files WHERE path LIKE ?
-    ''', (f'{prefix}%',))
-    count = cursor.fetchone()[0]
-    conn.close()
+    count = count_paths_with_prefix(db_path, prefix)
 
     print(f"Number of files that match the prefix '{prefix}': {count}")
 
@@ -192,21 +168,7 @@ def compare_directories(dirA, dirB):
         print(file)
 
 def report_files_for_prefix(db_path, prefix):
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    cursor.execute("SELECT path FROM files WHERE path LIKE ?", (prefix + '%',))
-    files = [row[0] for row in cursor.fetchall()]
-    conn.close()
-    return files
+    return list_paths_with_prefix(db_path, prefix)
 
 def report_duplicates_for_prefix(db_path, prefix):
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    cursor.execute("SELECT md5sum, path FROM files WHERE path LIKE ?", (prefix + '%',))
-    rows = cursor.fetchall()
-    md5_to_paths = {}
-    for md5sum, path in rows:
-        md5_to_paths.setdefault(md5sum, []).append(path)
-    duplicates = {md5sum: paths for md5sum, paths in md5_to_paths.items() if len(paths) > 1}
-    conn.close()
-    return duplicates
+    return find_duplicates_under_prefix(db_path, prefix)
