@@ -6,7 +6,7 @@ from queue import Queue
 
 # No `sqlite3` import here on purpose. Every query in this module goes through
 # src/db.py, which owns the schema, the connection and the lock-retry loop
-# (#10). tests/test_db_is_the_only_connection.py pins that.
+# (#10). tests/test_db_owns_the_connection.py pins that.
 from src.db import (
     check_for_duplicates,
     count_duplicates_per_path,
@@ -59,6 +59,12 @@ def scan_dir_report(path, db_path, num_threads):
         while True:
             file_path = file_queue.get()
             if file_path is None:
+                # The sentinel is a queued task like any other, so it has to be
+                # marked done. Without this, file_queue.join() below waits
+                # forever on one unfinished task per worker and the action never
+                # returns -- see the matching consumer in file_ops.scan_dir,
+                # which has always done it.
+                file_queue.task_done()
                 break
             process_and_report(file_path)
 
