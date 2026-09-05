@@ -5,7 +5,7 @@ import tempfile
 import shutil
 from unittest.mock import patch
 from src.main import audit_db
-from src.db import initialize_db, remove_record, store_file_info
+from src.db import initialize_db, remove_record_by_path, store_file_info
 from src.md5sum import compute_md5
 
 
@@ -45,7 +45,7 @@ class TestAuditDB(unittest.TestCase):
 
         os.remove(file_path)  # Remove the file to simulate a missing file
 
-        with patch('src.db.remove_record') as mock_remove_file_info:
+        with patch('src.db.remove_record_by_path') as mock_remove_file_info:
             audit_db(self.db_path, 2, process_file=lambda path, db: None)
             mock_remove_file_info.assert_called_once_with(self.db_path, file_path)
 
