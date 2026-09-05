@@ -137,7 +137,7 @@ def test_find_duplicates_groups_every_shared_pair(db_path, dup_tree):
     for path in dup_tree.all_files():
         store_file_info(db_path, str(path), compute_md5(str(path)))
 
-    duplicates = find_duplicates_with_min_count(db_path, min_count=1)
+    duplicates = find_duplicates_with_min_count(db_path, min_count=2)
 
     # Every pair, the comma-carrying one included -- see #5.
     for left, right in dup_tree.duplicated:
@@ -150,7 +150,7 @@ def test_find_duplicates_survives_a_comma_in_the_path(db_path, dup_tree):
     store_file_info(db_path, str(left), compute_md5(str(left)))
     store_file_info(db_path, str(right), compute_md5(str(right)))
 
-    duplicates = find_duplicates_with_min_count(db_path, min_count=1)
+    duplicates = find_duplicates_with_min_count(db_path, min_count=2)
 
     assert_one_group(duplicates, left, right)
 

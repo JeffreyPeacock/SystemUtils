@@ -233,16 +233,20 @@ def check_for_duplicates(db_path, md5sum):
         description="check for duplicates",
     )
 
-def find_duplicates_with_min_count(db_path, min_count=1):
+def find_duplicates_with_min_count(db_path, min_count=2):
     """
-    Find duplicate files in the database with a minimum count of occurrences.
+    Find checksums held by at least `min_count` files.
 
-    Note `min_count` is compared with `>`, not `>=`, so the default of 1 returns
-    groups of two or more. That is long-standing behaviour and is #6, not this.
+    `min_count` counts COPIES, not copies beyond the first: 2 means "a file and
+    at least one other like it", which is the smallest thing worth calling a
+    duplicate. The default is therefore 2, and it reports what the old default
+    of 1 reported, because the comparison used to be `>` (#6). Under that,
+    `--min-duplicates 3` returned groups of four -- the flag was off by one at
+    every value except where the two readings happen to coincide.
 
     Args:
         db_path (str): The path to the database file.
-        min_count (int): The minimum number of duplicate occurrences to search for.
+        min_count (int): The minimum number of files sharing a checksum.
 
     Returns:
         dict: keys are MD5 checksums, values are lists of paths sharing it.
@@ -261,7 +265,7 @@ def find_duplicates_with_min_count(db_path, min_count=1):
         SELECT md5sum, path FROM files
         WHERE md5sum IN (
             SELECT md5sum FROM files
-            GROUP BY md5sum HAVING COUNT(*) > ?
+            GROUP BY md5sum HAVING COUNT(*) >= ?
         )
         ORDER BY md5sum
         ''',
