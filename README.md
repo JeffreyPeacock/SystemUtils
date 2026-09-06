@@ -36,7 +36,11 @@ environment on your machine, not a portable fact about the project.
 
 There are no runtime dependencies. Every utility here is standard-library only;
 `requirements-dev.txt` holds nothing but the test and type tooling (pytest,
-pytest-cov, coverage, mypy).
+pytest-cov, pytest-timeout, coverage, mypy). `pytest-timeout` is there because a
+scan that fails to terminate **hangs** rather than raises, and only killing the
+process turns that into a red build — the reasoning, and the two stdlib
+alternatives that were measured failing, are recorded in `FileManager/pytest.ini`
+and `docs/Development-Principles.md` §3a.
 
 ### A trap worth knowing about
 
@@ -99,8 +103,8 @@ tree rather than the staged snapshot; the reasoning is in the script header.
 Two numbers in this repo only ever move up, and the reasoning is in
 [Development-Principles §4](docs/Development-Principles.md):
 
-- **`FileManager/pytest.ini` → `--cov-fail-under`.** Currently `99`, against a measured 99.57%, having ratcheted 29 → 32 → 49 → 50 → 53 → 62 → 71 → 82 → 93 → 95 → 99 and never been lowered. `src/gui.py` is excluded from measurement in `FileManager/.coveragerc`, with the reason recorded and a test that fails if any omission loses its reason. `FileManager/docs/REQUIREMENTS.txt` asks for 95%. Raise the floor in the same PR that raises real coverage.
-- **`FileManager/mypy.ini` → the per-module opt-out stanzas.** A module leaves the list by being annotated, never by the defaults being loosened.
+- **`FileManager/pytest.ini` → `--cov-fail-under`.** Currently `99`, against a measured 99.59%, having ratcheted 29 → 32 → 49 → 50 → 53 → 62 → 71 → 82 → 93 → 95 → 99 and never been lowered. `src/gui.py` is excluded from measurement in `FileManager/.coveragerc`, with the reason recorded and a test that fails if any omission loses its reason. `FileManager/docs/REQUIREMENTS.txt` asks for 95%. Raise the floor in the same PR that raises real coverage.
+- **`FileManager/mypy.ini` → the per-module opt-out stanzas.** A module leaves the list by **passing** `check_untyped_defs`, never by the defaults being loosened. Re-test the list occasionally rather than assuming: `gui` and `main` left it without needing any annotation, because those stanzas had been guarding nothing.
 
 Neither is lowered to make a red build green.
 

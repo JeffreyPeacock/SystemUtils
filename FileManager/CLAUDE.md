@@ -23,7 +23,7 @@ below worth reading before changing anything.
 `docs/REQUIREMENTS.txt` is the original specification. One of its requirements is
 still **not met**: the "full featured graphical user-interface" — only a
 paginated Tkinter duplicate list exists (#11). The 95% coverage requirement is
-**met**, at 99.57%; epic #8 and its children #32-#36 and #45 are closed.
+**met**, at 99.59%; epic #8 and its children #32-#36 and #45 are closed.
 
 ## Tech Stack
 
@@ -73,7 +73,7 @@ python -m mypy src/
 **201 tests across 17 modules, all passing, no xfails.** Coverage is on by default
 via `pytest.ini` (`--cov=src --cov-branch`), writes `coverage.xml` and
 `test-results.xml`, and enforces `--cov-fail-under=99` against a measured
-**99.57%** combined line+branch coverage.
+**99.59%** combined line+branch coverage.
 
 Per-module figures live in `.coverage-summary.md`, regenerated every run and
 committed — read that rather than duplicating a table here that goes stale. As
@@ -107,16 +107,22 @@ assuming. The three that remain each fail on one container literal, named in
 
 Every run writes **`.coverage-summary.md`**, and it is **committed**: overall line and
 branch tables, a per-file breakdown with 🟢/🟡/🔴 badges, and the test counts.
-`--no-cov` runs skip it. A file that is deliberately below full coverage gets a
-`†` and a footnote from `COVERAGE_NOTES` in `scripts/coverage_summary.py` —
-`gui.py` has one, so its 11% reads as a decision rather than neglect.
+Below them, an **Excluded from measurement** section names every file omitted in
+`.coveragerc` with its reason from `EXCLUSION_REASONS` in
+`scripts/coverage_summary.py`. The *list* is not duplicated there — the script
+reads `.coveragerc`, so the two cannot drift; an omission with no recorded
+reason renders as a warning rather than disappearing.
+
+**`--no-cov` runs skip it**, and that is load-bearing rather than an
+optimisation. The hook used to regenerate the summary from whatever
+`coverage.xml` was left on disk, so a `--no-cov` run could rewrite the committed
+report from a previous run's numbers — under a different `.coveragerc`, that
+produced a report describing a configuration that was not in effect.
 
 It is tracked deliberately, not ignored: the point is to see the per-file
 numbers move in a pull request diff. That does mean a commit touching tests
 usually carries a one-line churn in this file — regenerate it (`python -m
-pytest`) and include it rather than leaving a stale one behind. Add a note
-only where the reason is real; if the honest answer is "this should be
-restructured so it can be tested", say that instead.
+pytest`) and include it rather than leaving a stale one behind.
 
 **`timeout = 60`, `timeout_method = thread` is a gate, not a nicety.** Both
 producer/consumer scans shut their workers down with one sentinel per worker,
@@ -147,7 +153,7 @@ regenerates the numbered files.
 `src/main.py` is an argparse dispatcher — one `elif` per action — with no logic
 beyond argument validation. Below it is a flat module layer, no classes:
 
-- `src/db.py` — the only module that calls `sqlite3.connect`. Owns the schema, every query, and the lock-retry behaviour, all through one gateway: `with_connection(db_path, work, commit=...)`.
+- `src/db.py` — the only module that calls `sqlite3.connect`. Owns the schema, every query, and the lock-retry behaviour, all through one gateway: `with_connection(db_path, work, commit=...)`. Also owns `UniquenessUnknown`, raised when a file's uniqueness cannot be determined — never answered as `False`, which is a verdict (#41).
 - `src/file_ops.py` — directory walking and the decision of whether a file needs hashing. `process_file` is the core routine.
 - `src/reporting.py` — formats and prints; every query it runs is a `db.py` function (#10). It must not import `sqlite3`, and `tests/test_db_owns_the_connection.py` fails if it does.
 - `src/gui.py` — a Tkinter duplicate browser, reached only via `report-duplicates --use-gui`. Writes `rm_commands.txt` rather than deleting anything itself.

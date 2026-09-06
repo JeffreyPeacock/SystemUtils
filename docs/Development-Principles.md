@@ -5,7 +5,8 @@ the durable lessons worth carrying forward, not one-off decisions. Add to it whe
 crystallises; keep each entry short, concrete, and paired with *why* and an example.
 
 Entries 1–3 are adopted from the WhiteFeather/WTIS principles, which this repository's conventions
-were adapted from. Entry 4 was written here.
+were adapted from. Entries 3a and 4 were written here — 3a after two plausible-looking guards were
+each measured failing to stop anything.
 
 ---
 

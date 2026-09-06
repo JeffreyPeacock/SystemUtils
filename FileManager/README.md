@@ -150,7 +150,7 @@ python -m mypy src/           # must be clean
 
 201 tests in 17 modules, no xfails. `pytest.ini` enables branch coverage, writes
 `coverage.xml` and `test-results.xml`, and fails under **99%** — the current real
-measurement is 99.57%, which meets the 95% `docs/REQUIREMENTS.txt` has asked for
+measurement is 99.59%, which meets the 95% `docs/REQUIREMENTS.txt` has asked for
 since 2024. `src/gui.py` is omitted from measurement in `.coveragerc` and named
 as excluded in the summary; see `CLAUDE.md` for why. The gap was closed by epic
 [#8](https://github.com/JeffreyPeacock/SystemUtils/issues/8) and its children
