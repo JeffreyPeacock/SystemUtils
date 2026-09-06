@@ -70,7 +70,7 @@ python -m mypy src/
 
 ## Testing
 
-**194 tests across 17 modules, all passing, no xfails.** Coverage is on by default
+**201 tests across 17 modules, all passing, no xfails.** Coverage is on by default
 via `pytest.ini` (`--cov=src --cov-branch`), writes `coverage.xml` and
 `test-results.xml`, and enforces `--cov-fail-under=99` against a measured
 **99.57%** combined line+branch coverage.
@@ -218,7 +218,7 @@ rewritten the same day when #6 and #7 landed.
 - **`--min-duplicates` counts copies, and its default is 2.** `find_duplicates_with_min_count` compares with `>=`, so 2 means "a file and at least one other like it". Until #6 the comparison was `>` with a default of 1: the same output, reached by an argument that meant one less than it said, so `--min-duplicates 3` returned groups of four.
 - **Record removal is two functions in `db.py`, named apart.** `remove_record_by_path` takes one exact path; `remove_records_by_regex` takes a pattern matched against the whole path. Until #7 both were called `remove_record`, in different modules, with opposite behaviour. `tests/test_removal_function_names.py` fails if any module under `src/` reintroduces the bare name.
 - **`scan-unique-files` writes into the directory it scans.** It appends a `.processed_files.txt` resume log at the root of the target directory and reads it back on the next run. Delete it to force a full recheck. Because the log lands *inside* the scanned tree, the next `os.walk` finds it and checks it like any other file — so a second run over an unchanged tree reports exactly one file: the log.
-- **`is_file_unique` reports an unreadable file as a duplicate.** Every exception below its `isfile` check becomes `return False`, which means *not unique* — the same answer as a file that genuinely has a copy elsewhere. Open as #41; the current behaviour is pinned by a test, so changing it is a deliberate contract change.
+- **`is_file_unique` raises rather than answering when it cannot tell.** `UniquenessUnknown` — not `False`, which is a verdict meaning *not unique*, and not a falsy sentinel any caller would reproduce the bug with (#41). `scan-unique-files` logs such files as `unreadable` in the resume log, leaves them out of both lists, warns how many, and **re-checks them next run**: a verdict is final, "could not check" is not.
 - **`compare-directories` ignores the database.** It hashes both trees in full, in-process, and compares with an O(n·m) `md5 not in dict.values()` scan.
 - **`audit-db` keeps rows whose *directory* is also missing.** A deleted file leaves its parent directory behind; an unmounted volume does not. Rows in the second case are reported as `SUSPECT` and **not** removed, so a failed mount no longer empties a subtree (#2). The cost is that a directory you genuinely deleted also survives — `--prune-missing-dirs` removes those deliberately, and `--dry-run` shows either case first.
 - **`remove-record` is literal by default.** `--regex` opts into pattern matching, and the pattern must match the **whole** path (`re.fullmatch`). Deleting a subtree is therefore explicit: `'/a/b/.*'`. Before #1 the argument was always a prefix-anchored regex, so a literal `/a/b` also deleted `/a/bc`.
@@ -267,11 +267,9 @@ a list in this file only goes stale. `/priority-review` renders it as a
 priority-ordered table in `FileManager/docs/ticket-priority-review.md` when you
 want it at a glance.
 
-Three silent-wrong-answer paths are fixed — #1 (prefix-anchored removal), #2
-(audit-db emptying an unmounted volume) and #43 (`scan-dir-report` never
-returning). The coverage epic **#8** is closed at 99.57%.
+Four silent-wrong-answer paths are fixed — #1 (prefix-anchored removal), #2
+(audit-db emptying an unmounted volume), #43 (`scan-dir-report` never returning)
+and #41 (an unreadable file reported as a duplicate). The coverage epic **#8**
+is closed.
 
-What remains is **3 open tickets**: **#41**, where a file that could not be
-hashed is reported as a duplicate rather than as unknown, so an I/O error can
-keep the only copy out of the unique list; and the two GUI tickets, **#3** and
-**#11**.
+What remains is **2 open tickets**, both about the GUI: **#3** and **#11**.
