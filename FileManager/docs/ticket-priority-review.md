@@ -3,19 +3,18 @@
 The SystemUtils project board (#14) on GitHub holds the authoritative detail; this doc is the
 at-a-glance ordering view the board doesn't give cleanly.
 
-**Snapshot:** 2026-09-04 18:42 MST · 3 open · all in Backlog
+**Snapshot:** 2026-09-05 17:01 MST · 2 open · all in Backlog
 
-|  Pri   | #  |  Status |   Area   | Title | Note |
-|:------:|:--:|:-------:|:--------:|-------|------|
-| **p2** | 41 | Backlog | Scanning | is_file_unique reports an unreadable file as a<br>duplicate, not as unknown | Filed out of #33's coverage work. `False` means<br>"not unique", so a read error and a real duplicate<br>give the same answer, and the file drops out of the<br>keep list. Current behaviour is pinned by a test,<br>so this is a contract change. |
-| **p4** | 3  | Backlog |   GUI    | The GUI writes the checkbox object, not the path,<br>so rm_commands.txt is not runnable | The GUI's only output is unrunnable — it writes<br>`PY_VAR3`, not a path. Extract the path logic out<br>of the widget while fixing, which also serves #15. |
-| **p4** | 11 | Backlog |   GUI    | The GUI is a paginated duplicate list, not the file<br>manager the requirements describe | The largest requirements gap, and a decision rather<br>than a defect. Decide whether to build it or revise<br>the requirement. |
+|  Pri   | #  |  Status | Area | Title | Note |
+|:------:|:--:|:-------:|:----:|-------|------|
+| **p4** | 3  | Backlog | GUI  | The GUI writes the checkbox object, not the path,<br>so rm_commands.txt is not runnable | The GUI's only output is unrunnable — it writes<br>`PY_VAR3`, not a path. Extract the path logic out<br>of the widget while fixing, which also serves #15. |
+| **p4** | 11 | Backlog | GUI  | The GUI is a paginated duplicate list, not the file<br>manager the requirements describe | The largest requirements gap, and a decision rather<br>than a defect. Decide whether to build it or revise<br>the requirement. |
 
 ## Tally
 
 | Priority | p1 | p2 | p3 | p4 | p5 | — | Total |
 |----------|---:|---:|---:|---:|---:|--:|------:|
-| Open | 0 | 1 | 0 | 2 | 0 | 0 | 3 |
+| Open | 0 | 0 | 0 | 2 | 0 | 0 | 2 |
 
 &nbsp;
 
