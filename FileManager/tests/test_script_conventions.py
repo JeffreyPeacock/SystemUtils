@@ -12,8 +12,16 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parents[2]
+# Every shell script in the repository, wherever it lives. The globs are
+# deliberately broad: a script in a directory nobody thought to list is exactly
+# the one that ships with the wrong mode. FileManager/scripts/ was invisible
+# here until #52 added a script to it.
 SCRIPTS = sorted(
-    p for p in list(REPO.glob("FileManager/*.sh")) + list(REPO.glob("scripts/**/*.sh"))
+    p for p in (
+        list(REPO.glob("FileManager/*.sh"))
+        + list(REPO.glob("FileManager/scripts/**/*.sh"))
+        + list(REPO.glob("scripts/**/*.sh"))
+    )
     if ".git" not in p.parts
 )
 

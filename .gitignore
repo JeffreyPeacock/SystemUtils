@@ -31,3 +31,8 @@ test-results.xml
 *.db
 .processed_files.txt
 rm_commands.txt
+
+# Build artifacts from FileManager/scripts/build-pyz.sh. The bundle is built,
+# never committed -- a committed one goes stale against the source silently.
+FileManager/fm.pyz
+FileManager/build/
