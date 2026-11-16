@@ -79,6 +79,32 @@ python src/main.py help    # every action and option
 `--db-path` entirely uses `./file_manager.db` in the current directory. `*.db` is
 gitignored.
 
+**Keep the database outside every tree you scan.** A `.db` sitting inside the
+target is found by `os.walk` and hashed like any other file, so the scan records
+its own database and the file changes under it as it goes.
+
+### Running as root: build the bundle
+
+A whole-filesystem scan generally has to run as root, because a file the scanner
+cannot read contributes nothing to the database. `sudo python src/main.py` does
+**not** do what it looks like: `sudo` resolves `python` from *root's* `PATH`, not
+from the pyenv shim, so it silently runs a different interpreter or none at all.
+
+```sh
+scripts/build-pyz.sh                       # -> fm.pyz, about 56K
+sudo ./fm.pyz --threads 8 --db-path /var/lib/filemanager/home2.db scan /home2
+```
+
+`scripts/build-pyz.sh` uses `python -m zipapp` from the standard library and
+pins `/usr/bin/env python3` as the archive's shebang, which is the whole point —
+the bundle stops depending on the caller's `PATH` and on pyenv existing. There
+are no runtime dependencies to vendor, so nothing heavier is needed; the script
+verifies the result by *running* it, and `tests/test_build_pyz.py` builds it in
+CI and asserts the archive carries no stale bytecode.
+
+`fm.pyz` and `build/` are gitignored. The bundle is built, never committed — a
+committed one goes stale against the source silently.
+
 ---
 
 ## Things to know before you run it

@@ -74,7 +74,23 @@ python -m pytest --no-cov -q                                # skip the floor whi
 
 # Types
 python -m mypy src/
+
+# Bundle as one executable, for running as root
+scripts/build-pyz.sh                  # -> fm.pyz (~56K); optional arg sets the output path
+sudo ./fm.pyz --threads 8 --db-path /var/lib/filemanager/home2.db scan /home2
 ```
+
+**`sudo python src/main.py` runs the wrong interpreter.** `sudo` resolves
+`python` from *root's* PATH, not the pyenv shim, so it silently picks a
+different interpreter or none. `scripts/build-pyz.sh` solves exactly that by
+pinning `/usr/bin/env python3` into a `zipapp` archive — stdlib only, no
+vendoring, 56K (#52). It verifies the artifact by **running** it from `/`,
+because a zipapp can be written successfully and still be unrunnable, and
+running it from inside this directory would let `src.` imports resolve from the
+working directory rather than from the archive. `tests/test_build_pyz.py`
+rebuilds it in CI; its load-bearing assertion is that the archive holds no
+`.pyc`, since `cp -r src` copies bytecode and CPython invalidates on
+`(mtime, size)`.
 
 ## Testing
 
