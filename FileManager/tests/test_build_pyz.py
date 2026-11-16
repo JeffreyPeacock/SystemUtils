@@ -29,7 +29,7 @@ BUILD_SCRIPT = PROJECT / "scripts" / "build-pyz.sh"
 @pytest.fixture(scope="module")
 def built(tmp_path_factory) -> Path:
     """Build the bundle once, somewhere the repository does not keep it."""
-    output = tmp_path_factory.mktemp("pyz") / "fm.pyz"
+    output = tmp_path_factory.mktemp("pyz") / "FileManager.pyz"
     result = subprocess.run(
         [str(BUILD_SCRIPT), str(output)],
         capture_output=True, text=True, timeout=120,
@@ -81,29 +81,82 @@ def test_the_bundle_contains_the_source_and_an_entry_point(built):
     assert "src/db.py" in names
 
 
-def test_the_shebang_does_not_depend_on_the_callers_path(built):
-    """The whole point of the bundle.
+def test_the_shebang_is_exactly_what_the_consumer_asserts_on(built):
+    """Fixed by agreement, not by taste (#54).
 
-    `sudo python src/main.py` resolves `python` from root's PATH, not from the
-    pyenv shim, so it silently runs a different interpreter. A hard-coded path
-    to this machine's pyenv virtualenv would be just as wrong in the other
-    direction -- it would not exist on any other machine.
+    The Desktop-Ops installer runs `head -1` on the artifact and compares. Each
+    part of this string is load-bearing:
+
+      `-I` is isolated mode -- it ignores PYTHONPATH, the user site directory
+      and the script's directory. For a root-run executable that is the
+      difference between reading only its own code and picking up whatever an
+      ordinary user left on PYTHONPATH.
+
+      `/usr/bin/python3` is absolute rather than `/usr/bin/env python3`,
+      because the two cannot be combined with an option: Linux passes
+      everything after the interpreter path as ONE argument, so
+      `#!/usr/bin/env python3 -I` hands env the single argument "python3 -I".
+
+      Exactly ONE option, for the same reason -- `-I -B` arrives as one string
+      and python exits 2 with `Unknown option: - `.
     """
     shebang = built.read_bytes().split(b"\n", 1)[0].decode()
 
-    assert shebang.startswith("#!"), f"no shebang: {shebang!r}"
-    assert "/usr/bin/env python3" in shebang, shebang
-    assert ".pyenv" not in shebang, f"pins this machine's interpreter: {shebang}"
+    assert shebang == "#!/usr/bin/python3 -I", (
+        f"shebang is {shebang!r}; the consumer's installer asserts on "
+        f"'#!/usr/bin/python3 -I' exactly (#54)"
+    )
 
 
-def test_the_build_script_is_not_committed_with_its_output(built):
-    """fm.pyz is a build artifact; committing one is how it goes stale."""
+def test_the_bundle_ignores_a_poisoned_pythonpath(built, tmp_path):
+    """What `-I` buys, asserted rather than assumed.
+
+    The consumer runs this as root from an arbitrary environment. Without
+    isolated mode a stray PYTHONPATH entry -- or a module dropped in the
+    executable's own directory -- is on the import path of a root process.
+    """
     result = subprocess.run(
-        ["git", "check-ignore", "FileManager/fm.pyz", "FileManager/build"],
+        [str(built), "help"],
+        cwd=tmp_path, timeout=60, capture_output=True, text=True,
+        env={**os.environ, "PYTHONPATH": "/nonexistent/should/not/matter"},
+    )
+
+    assert result.returncode == 0, f"exit {result.returncode}: {result.stderr}"
+    assert "File Manager Application" in result.stdout
+
+
+def test_the_artifact_lands_where_the_installer_looks(built):
+    """The default path is part of the contract, so a default-path build is
+    what gets checked -- `built` overrides it, which would hide a change."""
+    result = subprocess.run(
+        [str(BUILD_SCRIPT)], capture_output=True, text=True, timeout=120,
+    )
+    assert result.returncode == 0, result.stderr
+
+    expected = PROJECT / "dist" / "FileManager.pyz"
+    assert expected.is_file(), (
+        f"default build did not produce {expected}; the Desktop-Ops installer "
+        f"reads that path (#54)"
+    )
+    assert expected.read_bytes().split(b"\n", 1)[0].decode() == "#!/usr/bin/python3 -I"
+
+
+def test_the_build_output_is_not_committable():
+    """The artifact is built, never committed; a committed one goes stale.
+
+    Checks paths INSIDE the ignored directories, not the directory names.
+    `dist/` and `build/` carry a trailing slash, so those patterns match only a
+    real directory -- `git check-ignore FileManager/dist` exits 1 in a fresh
+    clone where nothing has been built yet, which would make this test pass or
+    fail depending on whether a build happened to have run first.
+    """
+    targets = ["FileManager/dist/FileManager.pyz", "FileManager/build/pyz"]
+    result = subprocess.run(
+        ["git", "check-ignore", *targets],
         cwd=REPO, capture_output=True, text=True, timeout=30,
     )
 
     assert result.returncode == 0, (
-        "FileManager/fm.pyz and FileManager/build must be gitignored; "
-        f"git check-ignore said: {result.stdout}{result.stderr}"
+        f"{targets} must be gitignored; git check-ignore reported: "
+        f"{result.stdout}{result.stderr}"
     )

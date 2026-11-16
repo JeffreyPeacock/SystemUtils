@@ -91,8 +91,8 @@ cannot read contributes nothing to the database. `sudo python src/main.py` does
 from the pyenv shim, so it silently runs a different interpreter or none at all.
 
 ```sh
-scripts/build-pyz.sh                       # -> fm.pyz, about 56K
-sudo ./fm.pyz --threads 8 --db-path /var/lib/filemanager/home2.db scan /home2
+scripts/build-pyz.sh      # -> dist/FileManager.pyz, about 56K
+sudo ./dist/FileManager.pyz --threads 8 --db-path /var/lib/filemanager/home2.db scan /home2
 ```
 
 `scripts/build-pyz.sh` uses `python -m zipapp` from the standard library and
@@ -102,7 +102,7 @@ are no runtime dependencies to vendor, so nothing heavier is needed; the script
 verifies the result by *running* it, and `tests/test_build_pyz.py` builds it in
 CI and asserts the archive carries no stale bytecode.
 
-`fm.pyz` and `build/` are gitignored. The bundle is built, never committed — a
+`dist/` and `build/` are gitignored. The bundle is built, never committed — a
 committed one goes stale against the source silently.
 
 ---

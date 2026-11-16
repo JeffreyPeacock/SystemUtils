@@ -76,8 +76,8 @@ python -m pytest --no-cov -q                                # skip the floor whi
 python -m mypy src/
 
 # Bundle as one executable, for running as root
-scripts/build-pyz.sh                  # -> fm.pyz (~56K); optional arg sets the output path
-sudo ./fm.pyz --threads 8 --db-path /var/lib/filemanager/home2.db scan /home2
+scripts/build-pyz.sh     # -> dist/FileManager.pyz (~56K); optional arg overrides
+sudo ./dist/FileManager.pyz --threads 8 --db-path /var/lib/filemanager/home2.db scan /home2
 ```
 
 **`sudo python src/main.py` runs the wrong interpreter.** `sudo` resolves
