@@ -63,7 +63,7 @@ python src/main.py help    # every action and option
 | `scan` | Walk a comma-separated list of directories/files, hash what changed, store it |
 | `check-file` | Hash one file and report whether the database already holds a match |
 | `scan-dir-report` | Scan a directory and report duplicates as it goes |
-| `report-duplicates` | List every duplicate group in the database (`--use-gui` for the Tkinter browser) |
+| `report-duplicates` | List every duplicate group in the database |
 | `report-duplicate-sizes` | Estimate the space reclaimable by deleting redundant copies |
 | `report-prefix-count` | Count recorded files under a path prefix |
 | `report-files-for-prefix` | List recorded files under a path prefix |
@@ -103,8 +103,7 @@ main.py  (argparse dispatch, no logic)
    ├── file_ops.py    walk the tree, decide what needs hashing
    │      └── md5sum.py     4 KB-chunked hashlib.md5
    ├── db.py          every write; owns the schema and lock retries
-   ├── reporting.py   read-only queries, printed to stdout
-   └── gui.py         Tkinter duplicate browser (writes rm_commands.txt)
+   └── reporting.py   read-only queries, printed to stdout
 ```
 
 ### Schema
@@ -148,26 +147,33 @@ python -m mypy src/           # must be clean
 
 ### Testing
 
-201 tests in 17 modules, no xfails. `pytest.ini` enables branch coverage, writes
+209 tests in 18 modules, no xfails. `pytest.ini` enables branch coverage, writes
 `coverage.xml` and `test-results.xml`, and fails under **99%** — the current real
-measurement is 99.59%, which meets the 95% `docs/REQUIREMENTS.txt` has asked for
-since 2024. `src/gui.py` is omitted from measurement in `.coveragerc` and named
-as excluded in the summary; see `CLAUDE.md` for why. The gap was closed by epic
+measurement is 99.58%, which meets the 95% `docs/REQUIREMENTS.txt` has asked for
+since 2024. **Nothing is excluded from measurement**: `src/gui.py` was the only
+omission and it left with the GUI in #51, so `.coveragerc` has no `omit` key at
+all. The gap was closed by epic
 [#8](https://github.com/JeffreyPeacock/SystemUtils/issues/8) and its children
 #32–#36 and #45.
 
 Every run also writes **`.coverage-summary.md`**, which is committed — read it
-for the per-file breakdown rather than trusting a table in a README. As of
-2026-09-04 every measured module is at 100% line and branch except `main`, at
-99.2%, whose two remaining statements are uncovered on purpose and named in
-`tests/test_main_dispatch.py`. `gui` is listed there under "Excluded from
-measurement", with the reason.
+for the per-file breakdown rather than trusting a table in a README. Every
+module is at 100% line and branch except `main`, at 98%, whose two remaining
+statements are uncovered on purpose and named in
+`tests/test_main_dispatch.py`.
+
+Re-adding an exclusion needs a recorded reason, a ticket, and an edit to
+`tests/test_coverage_config.py`, which asserts that the live config omits
+nothing. That test drives the exclusion machinery with fabricated configs
+rather than the live one, because with an empty omit list every "for each
+omitted file" assertion would iterate nothing and pass without testing
+anything.
 
 The floor **only moves up** — raise it in the same PR that raises real coverage.
 Same for the per-module opt-outs in `mypy.ini`: a module leaves the list by
 passing `check_untyped_defs`, not by loosening the defaults. `gui` and `main`
-left it in #36; `db`, `file_ops` and `reporting` each need one annotation, named
-in `mypy.ini`. See
+left it in #36 (and `gui` has since left the project entirely); `db`,
+`file_ops` and `reporting` each need one annotation, named in `mypy.ini`. See
 [Development-Principles §4](../docs/Development-Principles.md).
 
 ### Fixtures
@@ -182,12 +188,12 @@ one means adding it to the other.
 ## Backlog
 
 Tracked on the [SystemUtils board](https://github.com/users/JeffreyPeacock/projects/14),
-filtered by `component:file-manager` — **2 open** at the time of writing, both
-about the GUI: #3 and #11.
+filtered by `component:file-manager`. The GUI tickets #3 and #11 closed with
+#51, when the GUI left this project for one of its own (#53).
 
-One is worth reading before relying on this tool for anything destructive:
+One is worth reading before relying on this database to detect corruption:
 
-- **#3** — the GUI writes the checkbox object rather than the path, so `rm_commands.txt` is not runnable
+- **#50** — neither `scan` nor `audit-db` can detect silent corruption. Both compare `(size, mtime)` and skip hashing when they match, so a rescan skips exactly the files whose contents were in question: bit rot, a bad sector and a failing cable all rewrite bytes without changing size or mtime. The baseline is recorded correctly; nothing reads it back.
 
 Four silent-wrong-answer paths are fixed: #1 and #2; #43, where
 `scan-dir-report` never returned at all until its shutdown was tested; and #41,

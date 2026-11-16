@@ -23,18 +23,17 @@ import xml.etree.ElementTree as ET
 # A file omitted with no reason recorded here is reported as exactly that,
 # loudly, rather than quietly disappearing from the report. An exclusion nobody
 # can see is indistinguishable from a module that was never written.
-EXCLUSION_REASONS = {
-    "gui": (
-        "A Tkinter widget tree and a `mainloop()`. Unit-testing widget "
-        "construction asserts on the library rather than on this code. It was "
-        "measured until #45, where it capped the total near 88% -- 82 of 601 "
-        "statements -- putting the 95% in `docs/REQUIREMENTS.txt` out of reach "
-        "however well the rest was tested. The part that *is* worth testing -- "
-        "which selected rows map to which paths -- should be extracted out of "
-        "the widget code, which is #3. When it is, it lands in a module that "
-        "**is** measured; this list does not grow to follow it."
-    ),
-}
+# This is EMPTY, and that is the current state of the project rather than an
+# oversight: .coveragerc omits nothing. The single entry here was `gui`, from
+# #45 until #51 moved the GUI out into its own application (#53).
+#
+# The machinery below is kept rather than deleted along with its one entry,
+# because it is the guard for the next exclusion, not a record of the last one.
+# It is exercised against synthetic configs in tests/test_coverage_config.py --
+# both an omission with a reason and one without -- so it is proven to work
+# while this dict is empty, instead of passing vacuously until the day someone
+# needs it.
+EXCLUSION_REASONS: dict[str, str] = {}
 
 
 def omitted_files(root):

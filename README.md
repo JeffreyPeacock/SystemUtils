@@ -103,8 +103,8 @@ tree rather than the staged snapshot; the reasoning is in the script header.
 Two numbers in this repo only ever move up, and the reasoning is in
 [Development-Principles §4](docs/Development-Principles.md):
 
-- **`FileManager/pytest.ini` → `--cov-fail-under`.** Currently `99`, against a measured 99.59%, having ratcheted 29 → 32 → 49 → 50 → 53 → 62 → 71 → 82 → 93 → 95 → 99 and never been lowered. `src/gui.py` is excluded from measurement in `FileManager/.coveragerc`, with the reason recorded and a test that fails if any omission loses its reason. `FileManager/docs/REQUIREMENTS.txt` asks for 95%. Raise the floor in the same PR that raises real coverage.
-- **`FileManager/mypy.ini` → the per-module opt-out stanzas.** A module leaves the list by **passing** `check_untyped_defs`, never by the defaults being loosened. Re-test the list occasionally rather than assuming: `gui` and `main` left it without needing any annotation, because those stanzas had been guarding nothing.
+- **`FileManager/pytest.ini` → `--cov-fail-under`.** Currently `99`, against a measured 99.58%, having ratcheted 29 → 32 → 49 → 50 → 53 → 62 → 71 → 82 → 93 → 95 → 99 and never been lowered. **Nothing is excluded from measurement** as of #51: `src/gui.py` was the only omission and it left with the GUI. Re-adding one needs a recorded reason, a ticket, and an edit to the test that asserts the config omits nothing. `FileManager/docs/REQUIREMENTS.txt` asks for 95%. Raise the floor in the same PR that raises real coverage.
+- **`FileManager/mypy.ini` → the per-module opt-out stanzas.** A module leaves the list by **passing** `check_untyped_defs`, never by the defaults being loosened. Re-test the list occasionally rather than assuming: `gui` and `main` left it without needing any annotation, because those stanzas had been guarding nothing. (`gui` has since left the project entirely with the GUI, #51.)
 
 Neither is lowered to make a red build green.
 

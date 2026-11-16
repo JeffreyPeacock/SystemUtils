@@ -17,7 +17,6 @@ from src.reporting import (
     scan_dir_report, report_duplicates, report_duplicate_sizes,
     report_prefix_count, compare_directories
 )
-from src.gui import show_duplicates_gui
 from src.utils import report_settings
 
 # Configure logging
@@ -32,7 +31,7 @@ def usage():
 
     Usage:
         main.py <action> <path> [--db-path <db_path>] [--threads <num_threads>]
-        [--prefix <prefix>] [--dirA <dirA>] [--dirB <dirB>] [--use-gui] [--min-duplicates <min_duplicates>]
+        [--prefix <prefix>] [--dirA <dirA>] [--dirB <dirB>] [--min-duplicates <min_duplicates>]
         [--exclude-prefix <exclude_prefix>] [--regex] [--dry-run]
         [--prune-missing-dirs]
 
@@ -63,7 +62,6 @@ def usage():
                             compare-directories action).
         --dirB              Path to the second directory for comparison (required for
                             compare-directories action).
-        --use-gui           Use GUI for displaying duplicates.
         --min-duplicates    Report only checksums held by at least this many files
                             (default: 2). Counts copies, not copies beyond the
                             first -- 2 means a file and one other like it.
@@ -80,7 +78,6 @@ def usage():
         python main.py scan /path/to/dir1,/path/to/dir2 --db-path /path/to/db --threads 4
         python main.py check-file /path/to/file --db-path /path/to/db --threads 4
         python main.py scan-dir-report /path/to/dir --db-path /path/to/db --threads 4
-        python main.py report-duplicates --db-path /path/to/db --threads 4 --use-gui
         python main.py audit-db --db-path /path/to/db --threads 4 --dry-run
         python main.py audit-db --db-path /path/to/db --threads 4 --exclude-prefix /exclude/path1,/exclude/path2
         python main.py report-duplicate-sizes --db-path /path/to/db
@@ -174,10 +171,6 @@ def main():
         '--dirB', help='Path to the second directory for comparison'
     )
     parser.add_argument(
-        '--use-gui', action='store_true',
-        help='Use GUI for displaying duplicates'
-    )
-    parser.add_argument(
         '--dry-run', action='store_true',
         help='audit-db only: report what would change without changing it'
     )
@@ -245,15 +238,11 @@ def main():
         else:
             duplicates = report_duplicates(db_path, args.min_duplicates)
         print(f"Found {len(duplicates)} duplicates")
-        if args.use_gui:
-            truncated_duplicates = dict(list(duplicates.items())[:100])
-            show_duplicates_gui(truncated_duplicates)
-        else:
-            for md5sum, paths in duplicates.items():
-                if len(paths) > 1:
-                    print(f"MD5: {md5sum}")
-                    for path in paths:
-                        print(f"  {path}")
+        for md5sum, paths in duplicates.items():
+            if len(paths) > 1:
+                print(f"MD5: {md5sum}")
+                for path in paths:
+                    print(f"  {path}")
 
     elif args.action == 'audit-db':
         exclude_prefixes = args.exclude_prefix.split(',') if args.exclude_prefix else None

@@ -126,9 +126,17 @@ irreversible operation one misclick away.
 bulk action over a list the user has been scrolling for ten minutes is not
 meaningful consent.
 
-**Known defect.** The current implementation writes the `BooleanVar` object's
-repr rather than the file path, so the generated file is not runnable. The design
-is right; the implementation is broken.
+**Known defect.** The implementation wrote the `BooleanVar` object's repr rather
+than the file path, so the generated file was not runnable. The design was right;
+the implementation was broken.
+
+**Status: moved, not abandoned (#51, 2026-11-16).** `src/gui.py` is gone from
+this project and the GUI becomes a separate application (#53). **This decision
+carries forward unchanged** — the browser emits shell commands for review and
+deletes nothing itself — and so does the defect, as a lesson: capture the path
+alongside the `BooleanVar` when the checkbox is built, rather than reading the
+widget back. The broken output shipped for two years, which is what an untested
+widget layer buys.
 
 *Reconstructed from the code; predates this file.*
 
@@ -302,7 +310,21 @@ report shows it.
 which paths — should be extracted out of the widget code, which is #3. When it is, it lands in a
 module that **is** measured. The omit list does not grow to follow it.
 
-**Related issues:** #45, #8, #3
+**Superseded by #51 (2026-11-16), by a better answer to the same problem.** Rather than extract the
+testable part of `gui.py` into a measured module, the whole GUI left this project for one of its own
+(#53). `.coveragerc` now has no `omit` key at all. The reasoning above is kept because it is the
+justification for the ceremony that still guards the list: re-adding an exclusion needs a recorded
+reason, a ticket, **and** an edit to the test that asserts the live config omits nothing.
+
+One thing changed in how that is tested, and it is the part worth carrying. With an empty omit list,
+every "for each omitted file" assertion iterates nothing and passes without testing anything — which
+is indistinguishable from a working guard (§3a). So `tests/test_coverage_config.py` now drives the
+renderer with a fabricated `coverage.xml` and a fabricated omit list, covering an omission with a
+reason, one without, and one that is not taking effect. The machinery is kept with an empty dict
+rather than deleted, because it is the guard for the next exclusion, not a record of the last one —
+and it is now proven to work while unused, instead of passing vacuously until someone needs it.
+
+**Related issues:** #45, #8, #3, #51
 
 ---
 
@@ -361,3 +383,45 @@ where a missing mount point was read as a mass deletion, and the same reasoning 
 its `SUSPECT` state.
 
 **Related issues:** #41, #33, #2
+
+## A headless scanner and a GUI are two programs, not one program with a flag
+
+**Problem.** `src/gui.py` was reachable only through `report-duplicates --use-gui`, but it was not
+optional in any way that mattered. `src/main.py` imported it at module scope, so **every** run
+imported `tkinter` — including a root scan of five million files on a machine with no display. The
+costs were spread thin enough to look acceptable individually:
+
+- CI needed a "Verify tkinter is available" step for a dependency nothing under test used, because
+  collecting the suite imported the widget tree.
+- The module had to be excluded from coverage, since asserting on widget construction tests Tk
+  rather than this code. While measured it capped the total near 88% and put the 95% in
+  `docs/REQUIREMENTS.txt` out of reach however well everything else was tested (#45).
+- Bundling the scanner to run as root meant either bundling Tk or special-casing the import (#52).
+- Its only output had been unrunnable for two years (#3), which no CLI test could have caught.
+
+**Decision (owner, 2026-11-16).** Remove the GUI from this project. FileManager is a headless CLI
+scanner: no Tk, no display, no optional GUI flag. The graphical duplicate browser and editor becomes
+a separate application (#53) that reads the same database.
+
+This also answers #11, which had asked whether the "full featured graphical user-interface" in
+`docs/REQUIREMENTS.txt` §4 was still wanted or whether the requirement should be revised to describe
+the paginated list that was actually built. It is still wanted — as its own program. **So
+`REQUIREMENTS.txt` is not edited.** It is the original 2024 specification and stays as written; the
+requirement is satisfied elsewhere, and that is recorded here rather than by rewriting the spec to
+match the code.
+
+**Consequence accepted.** `report-duplicates --use-gui` is now an argparse rejection, exit code 2.
+Any wrapper or cron entry carrying the flag breaks rather than silently ignoring it, which is the
+right direction: a scan that quietly dropped an unrecognised flag would look like a normal run.
+
+**Ruled out.** Making the import lazy and keeping the GUI — one line, and it would have removed the
+CI step and the bundling problem. Rejected because it leaves the coverage hole, the untested widget
+layer and the broken output in place; it treats the symptom that was cheapest to see. Deleting the
+GUI outright with nothing to replace it: the duplicate browser is the only part of this tool a
+non-technical user can operate, and a list of duplicates in a terminal is not a substitute.
+
+**Measured effect.** 18 test modules instead of 17, 209 tests, mypy checking 7 files instead of 8,
+and coverage 99.59% → **99.58%** — a 0.01pp fall from deleting *covered* code, not from adding
+untested code. The floor stays at 99; a ratchet does not move down.
+
+**Related issues:** #51, #53, #3, #11, #45, #52

@@ -43,7 +43,7 @@ view listing everything, and one board view per component.
 | Scanning | `d82f5544` | Directory walking, hashing, the skip check |
 | Database | `4aa27676` | Schema, queries, SQLite locking |
 | Reporting | `4a6c3afd` | Duplicate and size reports |
-| GUI | `1eddb0a2` | The Tkinter duplicate browser |
+| GUI | `1eddb0a2` | The separate GUI browser/editor application (#53) |
 | Tooling | `0a403536` | Scripts, CI, build, dev environment |
 | Docs | `f578e119` | Documentation and findings |
 
