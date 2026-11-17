@@ -96,7 +96,7 @@ rebuilds it in CI; its load-bearing assertion is that the archive holds no
 
 ## Testing
 
-**326 tests across 24 modules, all passing, no xfails.** Coverage is on by default
+**330 tests across 25 modules, all passing, no xfails.** Coverage is on by default
 via `pytest.ini` (`--cov=src --cov-branch`), writes `coverage.xml` and
 `test-results.xml`, and enforces `--cov-fail-under=99` against a measured
 **99.67%** combined line+branch coverage.
@@ -136,18 +136,26 @@ same PR that raises real coverage; never lower it to make a red build green.
 Same rule for the per-module opt-out stanzas in `mypy.ini`: a module leaves that
 list by **passing** `check_untyped_defs`, never by the defaults being loosened.
 `gui` and `main` left it in #36 without needing annotation at all — the stanzas
-had been guarding nothing, which is worth re-testing occasionally rather than
-assuming. (`gui` has since left the project altogether with the GUI, #51, so
-mypy now checks 7 files.) The three that remain fail on four container literals
-between them, named in `mypy.ini`: two in `db`, one each in `file_ops` and
-`reporting`.
+had been guarding nothing. **`db` left it in #60**, and that one needed work: a
+`TypedDict` for `audit_db`'s return plus annotations on `duplicates` and
+`md5_to_paths`. mypy now checks 9 files. **Two stanzas remain**, `file_ops` and
+`reporting`, each failing on its one `file_queue` literal.
 
 **Re-run mypy with the stanzas stripped when checking the ratchets, and compare
 the per-module counts against what `mypy.ini` says it covers.** An exempt module
 absorbs a *new* error without `python -m mypy src/` noticing: #57 added
 `counts['failures']` to a dict inferred as `dict[str, int]`, taking `src/db.py`
-to 3 errors against the 2 documented, and the suite stayed green. #61 annotated
-it back. Reasoning in repo-root `docs/Development-Principles.md` §4.
+to 3 errors against the 2 documented, and the suite stayed green. #61 patched it
+with `dict[str, Any]`; #60 replaced that with a `TypedDict` and retired the
+stanza. Reasoning in repo-root `docs/Development-Principles.md` §4.
+
+**`audit_db` returns an `AuditCounts` TypedDict, and the caller is checked
+against it.** `src/main.py` was never exempt, so before #60 it typechecked only
+because `audit_db` returned `Any` out of an unchecked module —
+`_print_audit_summary` indexes that dict and calls `len()` on one of its values.
+A `type: ignore` would still silence mypy, so
+`tests/test_audit_counts_shape.py` compares the declared fields against the keys
+a real audit returns.
 
 Every run writes **`.coverage-summary.md`**, and it is **committed**: overall line and
 branch tables, a per-file breakdown with 🟢/🟡/🔴 badges, and the test counts.
@@ -341,6 +349,6 @@ scan is correct; nothing reads it back. Demonstrated on the ticket.
 Desktop-Ops installer's gate is cleared. Requirement 6 (dropping the
 `sys.path.append` in `main.py`) was **rejected by the owner**: it stays.
 
-Also open: **#60** (a `TypedDict` for `audit_db`'s counts) and **#53** (the GUI
-as its own application, carrying the decision from #11 and the path-handling bug
-from #3).
+Also open: **#53** (the GUI as its own application, carrying the decision from
+#11 and the path-handling bug from #3). #60 closed with the `AuditCounts`
+TypedDict.

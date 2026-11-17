@@ -230,14 +230,14 @@ Python 3.14.7 via the `sys-utils` pyenv-virtualenv, then
 `pip install -r requirements-dev.txt`.
 
 ```bash
-python -m pytest              # 326 tests; coverage on, floor enforced
+python -m pytest              # 330 tests; coverage on, floor enforced
 python -m pytest --no-cov -q  # faster while iterating
 python -m mypy src/           # must be clean
 ```
 
 ### Testing
 
-326 tests in 24 modules, no xfails. `pytest.ini` enables branch coverage, writes
+330 tests in 25 modules, no xfails. `pytest.ini` enables branch coverage, writes
 `coverage.xml` and `test-results.xml`, and fails under **99%** — the current real
 measurement is 99.67%, which meets the 95% `docs/REQUIREMENTS.txt` has asked for
 since 2024. **Nothing is excluded from measurement**: `src/gui.py` was the only
@@ -262,11 +262,11 @@ anything.
 The floor **only moves up** — raise it in the same PR that raises real coverage.
 Same for the per-module opt-outs in `mypy.ini`: a module leaves the list by
 passing `check_untyped_defs`, not by loosening the defaults. `gui` and `main`
-left it in #36 (and `gui` has since left the project entirely). The three that
-remain need four annotations between them — two in `db`, one each in `file_ops`
-and `reporting` — named in `mypy.ini`. Check that list by running mypy with the
-stanzas removed: an exempt module can absorb a new error silently, which is what
-#61 corrected. See
+left it in #36 (and `gui` has since left the project entirely); `db` left it in
+#60 by way of a `TypedDict` for `audit_db` and two dict annotations. **Two
+remain**, `file_ops` and `reporting`, each needing one `file_queue` annotation.
+Check the list by running mypy with the stanzas removed: an exempt module can
+absorb a new error silently, which is what #61 corrected and #60 finished. See
 [Development-Principles §4](../docs/Development-Principles.md).
 
 ### Fixtures
@@ -287,7 +287,6 @@ filtered by `component:file-manager`. The GUI tickets #3 and #11 closed with
 Worth reading before relying on this database to detect corruption:
 
 - **#50** — neither `scan` nor `audit-db` can detect silent corruption. Both compare `(size, mtime)` and skip hashing when they match, so a rescan skips exactly the files whose contents were in question: bit rot, a bad sector and a failing cable all rewrite bytes without changing size or mtime. The baseline is recorded correctly; nothing reads it back.
-- **#60** — `audit_db` returns a dict typed `dict[str, Any]`; a `TypedDict` would type every field and let `src/main.py` be checked against it.
 
 Four silent-wrong-answer paths are fixed: #1 and #2; #43, where
 `scan-dir-report` never returned at all until its shutdown was tested; and #41,
