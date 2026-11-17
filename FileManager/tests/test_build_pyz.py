@@ -15,6 +15,7 @@ That has already produced a wrong answer in this repository.
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import zipfile
 from pathlib import Path
@@ -30,9 +31,16 @@ BUILD_SCRIPT = PROJECT / "scripts" / "build-pyz.sh"
 def built(tmp_path_factory) -> Path:
     """Build the bundle once, somewhere the repository does not keep it."""
     output = tmp_path_factory.mktemp("pyz") / "FileManager.pyz"
+    # FM_ALLOW_DIRTY because this fixture tests the ARCHIVE, not the
+    # cleanliness policy. The build refuses a dirty tree (#62), and a developer
+    # with edits in progress is the normal case -- without this the whole
+    # module would fail for a reason unrelated to what it asserts. The refusal
+    # itself is tested directly, against throwaway repositories, in
+    # tests/test_stamp_build_info.py.
     result = subprocess.run(
         [str(BUILD_SCRIPT), str(output)],
         capture_output=True, text=True, timeout=120,
+        env={**os.environ, "FM_ALLOW_DIRTY": "1"},
     )
     assert result.returncode == 0, (
         f"build-pyz.sh failed ({result.returncode}):\n"
@@ -128,8 +136,11 @@ def test_the_bundle_ignores_a_poisoned_pythonpath(built, tmp_path):
 def test_the_artifact_lands_where_the_installer_looks(built):
     """The default path is part of the contract, so a default-path build is
     what gets checked -- `built` overrides it, which would hide a change."""
+    # FM_ALLOW_DIRTY for the same reason as the `built` fixture: this asserts
+    # on the default OUTPUT PATH, not on the state of the checkout running it.
     result = subprocess.run(
         [str(BUILD_SCRIPT)], capture_output=True, text=True, timeout=120,
+        env={**os.environ, "FM_ALLOW_DIRTY": "1"},
     )
     assert result.returncode == 0, result.stderr
 
@@ -255,3 +266,50 @@ def test_the_bundle_answers_every_help_form_with_zero(built, form):
     )
     assert "File Manager Application" in result.stdout
     assert result.stderr == "", f"it also complained: {result.stderr!r}"
+
+
+def test_the_bundle_names_the_commit_it_was_built_from(built, tmp_path):
+    """#54 requirement 9, measured on the artifact rather than on src/.
+
+    The consumer's installer runs exactly this before putting the file in
+    place, from an arbitrary directory with a poisoned PYTHONPATH, so that is
+    how it is run here. A bundle that answers "source checkout" has not been
+    stamped and is not installable, which is a separate failure from printing
+    no commit at all -- both are asserted.
+    """
+    result = subprocess.run(
+        [str(built), "--version"],
+        capture_output=True, text=True, timeout=60, cwd=str(tmp_path),
+        env={**os.environ, "PYTHONPATH": "/nonexistent/should/not/matter"},
+    )
+
+    assert result.returncode == 0, result.stderr
+    commit_lines = [l for l in result.stdout.splitlines()
+                    if l.startswith("commit")]
+    assert len(commit_lines) == 1, result.stdout
+    assert re.match(r"^commit +: +[0-9a-f]{40}$", commit_lines[0]), \
+        commit_lines[0]
+    assert "source checkout" not in result.stdout, (
+        "the archive was not stamped -- src/build_info.py inside it still "
+        "holds the committed None values"
+    )
+    assert "zipapp bundle" in result.stdout
+
+
+def test_the_bundle_reports_the_tree_state_it_was_built_from(built, tmp_path):
+    """The `built` fixture passes FM_ALLOW_DIRTY, so this says what it must.
+
+    A developer's tree is normally dirty, so the fixture opts in and the
+    artifact then reports it. The assertion is that the field is one of the
+    three answers and never silently absent -- not that it says "clean", which
+    would make this test depend on the state of the checkout running it.
+    """
+    result = subprocess.run(
+        [str(built), "--version"],
+        capture_output=True, text=True, timeout=60, cwd=str(tmp_path),
+        env={**os.environ, "PYTHONPATH": "/nonexistent/should/not/matter"},
+    )
+    tree_lines = [l for l in result.stdout.splitlines() if l.startswith("tree")]
+    assert len(tree_lines) == 1, result.stdout
+    value = tree_lines[0].split(":", 1)[1].strip()
+    assert value in ("clean", "dirty at build time") or "CANNOT" in value, value

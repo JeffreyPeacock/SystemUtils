@@ -18,6 +18,7 @@ from src.reporting import (
     report_prefix_count, compare_directories
 )
 from src.utils import report_settings
+from src.version import describe
 
 # Configure logging
 logging.basicConfig(
@@ -30,6 +31,7 @@ def usage():
     File Manager Application
 
     Usage:
+        main.py --version | --help
         main.py <action> <path> [--db-path <db_path>] [--threads <num_threads>]
         [--prefix <prefix>] [--dirA <dirA>] [--dirB <dirB>] [--min-duplicates <min_duplicates>]
         [--exclude-prefix <exclude_prefix>] [--regex] [--dry-run]
@@ -43,15 +45,6 @@ def usage():
         audit-db            Re-verify every recorded path. Drops rows for files
                             that no longer exist and rehashes those that changed.
                             Use --dry-run first: this action deletes rows.
-
-    Exit codes:
-        0                   the action completed and read everything it was asked
-                            to, or help was requested
-        1                   a required argument was missing or invalid
-        2                   argparse rejected the command line
-        3                   scan or audit-db completed but could not read part of
-                            the tree. Some files were recorded and some were not;
-                            the counts and the failed paths are on stdout.
         report-duplicate-sizes Report the total size of duplicate files.
         report-prefix-count Report the number of files that match a given prefix.
         remove-record       Remove the record for exactly the specified path.
@@ -63,7 +56,23 @@ def usage():
         help                Show this help message. `-h`, `--help` and `-?`
                             do the same and also exit 0.
 
+    Exit codes:
+        0                   the action completed and read everything it was asked
+                            to, or help was requested
+        1                   a required argument was missing or invalid
+        2                   argparse rejected the command line
+        3                   scan or audit-db completed but could not read part of
+                            the tree. Some files were recorded and some were not;
+                            the counts and the failed paths are on stdout.
+
     Options:
+        --version           Print the commit this code was built from, the
+                            build time and whether the tree was clean, then
+                            exit 0. A bundle reports the values embedded when
+                            it was built; a source checkout says so and reads
+                            git live. Either way a question git cannot answer
+                            prints CANNOT DETERMINE, never a placeholder. The
+                            clean/dirty check covers FileManager/ only.
         --db-path           Path to the database file or directory.
         --threads           Number of threads to use for concurrent operations.
         --prefix            Prefix to match files (required for
@@ -147,6 +156,21 @@ def get_file_info_action(db_path, file_path):
 # `-?` is included because it is conventional, with the caveat that `?` is a
 # shell glob character: it needs quoting as `'-?'` in some shells.
 HELP_FLAGS = ('-h', '--help', '-?')
+
+# Checked the same way and for the same reasons as HELP_FLAGS: `action` is a
+# required positional, so `main.py --version` alone would fail the
+# missing-argument check before argparse ever saw the flag (#62).
+#
+# Deliberately NOT argparse's `action='version'`. That route would raise
+# SystemExit(0) through the handler below -- which works as of #58 -- but it
+# would also mean two mechanisms answering two conventional flags in two
+# different places. One is easier to keep true. CLAUDE.md predicted the
+# argparse route; this supersedes it.
+#
+# `-V` is not accepted. #54's installer reads `--version`, and the long form is
+# the only one specified; adding a short alias nobody asked for is one more
+# string to keep documented.
+VERSION_FLAGS = ('--version',)
 
 
 # An action that ran to completion but could not read part of what it was asked
@@ -260,6 +284,13 @@ def main():
     # must work with no action given.
     if any(arg in HELP_FLAGS for arg in sys.argv[1:]):
         usage()
+        return 0
+
+    # Likewise before parsing. Help wins if both are given: a caller asking
+    # both questions at once is asking how to use the tool.
+    if any(arg in VERSION_FLAGS for arg in sys.argv[1:]):
+        for line in describe():
+            print(line)
         return 0
 
     try:
