@@ -5,7 +5,9 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from queue import Queue
 
-from src.db import store_file_info, check_for_duplicates, get_file_info
+from src.db import (
+    store_file_info, check_for_duplicates, get_file_info, recorded_checksums,
+)
 from src.md5sum import compute_md5
 
 # How many failed paths a summary prints before it gives a count instead. Every
@@ -204,3 +206,144 @@ def check_file(path, db_path):
 # thin wrappers used to sit here whose only job was to print the count, and one
 # of them was called `remove_record` -- the same name as db.py's exact-path
 # function, but with regex behaviour (#7). main.py prints the count now.
+
+
+class VerifyTally:
+    """What a verify found: matches, mismatches, and files it could not read.
+
+    Three outcomes, never two (#50). A file that could not be read is **not a
+    pass**: the stored checksum is still unverified, and calling that "fine"
+    recreates the exact failure the ticket is about. Same reasoning as
+    `UniquenessUnknown` (#41) and the scan's failed count (#57).
+
+    `mismatches` holds (path, stored, actual) so the report names both
+    checksums. The stored row is **never** overwritten -- a verify that
+    rewrote the baseline on a mismatch would destroy the evidence and pass
+    the second time it ran, which is worse than not verifying at all.
+    """
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self.matched = 0
+        self.mismatched = 0
+        self.unreadable = 0
+        self.mismatches = []
+        self.failures = []
+
+    def record_match(self):
+        with self._lock:
+            self.matched += 1
+
+    def record_mismatch(self, path, stored, actual):
+        with self._lock:
+            self.mismatched += 1
+            self.mismatches.append((path, stored, actual))
+
+    def record_unreadable(self, path, error):
+        with self._lock:
+            self.unreadable += 1
+            self.failures.append((path, str(error)))
+
+    @property
+    def checked(self):
+        return self.matched + self.mismatched + self.unreadable
+
+    def summary_lines(self):
+        """The report, for stdout. Mismatches first: they are the finding."""
+        lines = [
+            f"verify complete: checked {self.checked}, "
+            f"{self.matched} matched, {self.mismatched} MISMATCHED, "
+            f"{self.unreadable} unreadable"
+        ]
+        if self.mismatches:
+            lines.append(f"MISMATCHED ({self.mismatched}):")
+            for path, stored, actual in self.mismatches[:MAX_FAILURES_LISTED]:
+                lines.append(f"  {path}")
+                lines.append(f"    stored {stored}")
+                lines.append(f"    actual {actual}")
+            if self.mismatched > MAX_FAILURES_LISTED:
+                lines.append(
+                    f"  ... and {self.mismatched - MAX_FAILURES_LISTED} more; "
+                    f"each is on an ERROR line in the log"
+                )
+        if self.failures:
+            lines.append(f"unreadable ({self.unreadable}):")
+            for path, message in self.failures[:MAX_FAILURES_LISTED]:
+                lines.append(f"  {path}: {message}")
+            if self.unreadable > MAX_FAILURES_LISTED:
+                lines.append(
+                    f"  ... and {self.unreadable - MAX_FAILURES_LISTED} more; "
+                    f"each is on an ERROR line in the log"
+                )
+        return lines
+
+
+def verify_one_recording(path, stored_md5, tally):
+    """Rehash one recorded file and compare with what the database holds.
+
+    Unconditional: no (size, mtime) shortcut, because that shortcut is the
+    whole defect in #50. Bit rot, a bad sector and a failing cable all rewrite
+    bytes without touching either, so the files whose contents are in question
+    are exactly the ones a metadata comparison skips.
+    """
+    try:
+        actual = compute_md5(path)
+    except Exception as e:
+        logging.error(f"VERIFY unreadable {path}: {e}")
+        tally.record_unreadable(path, e)
+        return 'unreadable'
+
+    if actual == stored_md5:
+        tally.record_match()
+        return 'matched'
+
+    logging.error(
+        f"VERIFY MISMATCH {path}: stored {stored_md5}, actual {actual}"
+    )
+    tally.record_mismatch(path, stored_md5, actual)
+    return 'mismatched'
+
+
+def verify_db(db_path, num_threads=4, prefix=None, tally=None):
+    """Rehash recorded files and compare against the stored checksums (#50).
+
+    Read-only with respect to the database. Nothing is updated, removed or
+    rewritten: the stored checksum is the baseline being tested, and a verify
+    that "repaired" it would be a no-op on its second run and would have
+    destroyed the only evidence of corruption on its first.
+
+    Args:
+        db_path (str): The path to the database file.
+        num_threads (int): Width of the hashing pool.
+        prefix (str, optional): Verify only recorded paths under this prefix.
+            Verifying everything takes hours at the sizes this is used on, so
+            scoping is how a run is made to fit (#50).
+        tally (VerifyTally, optional): Accumulate into an existing tally.
+
+    Returns:
+        VerifyTally: the counts and the findings.
+    """
+    tally = VerifyTally() if tally is None else tally
+    rows = recorded_checksums(db_path, prefix)
+
+    logging.info(
+        f"VERIFY {len(rows)} recorded path(s)"
+        + (f" under {prefix}" if prefix else "")
+    )
+
+    with ThreadPoolExecutor(max_workers=num_threads) as executor:
+        futures = {
+            executor.submit(verify_one_recording, path, stored, tally): path
+            for path, stored in rows
+        }
+        for future in as_completed(futures):
+            path = futures[future]
+            try:
+                future.result()
+            except Exception as e:
+                # verify_one_recording catches read errors itself, so reaching
+                # here means something else broke -- it is still not a pass.
+                logging.error(f"VERIFY failed {path}: {e}")
+                tally.record_unreadable(path, e)
+
+    return tally
