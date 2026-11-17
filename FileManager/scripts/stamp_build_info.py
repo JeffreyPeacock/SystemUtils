@@ -32,8 +32,15 @@ import subprocess
 import sys
 from pathlib import Path
 
+# The timestamp format is defined once, in src/version.py, and imported here
+# rather than copied: the build time this script records and the header every
+# run prints are the same kind of fact, and two format strings is how they come
+# to disagree. This script is invoked by path from build-pyz.sh, so the project
+# root is not on sys.path yet.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from src.version import TIME_FORMAT  # noqa: E402
+
 ALLOW_DIRTY_ENV = 'FM_ALLOW_DIRTY'
-TIME_FORMAT = '%Y-%m-%d %H:%M:%S %Z'
 
 TEMPLATE = '''\
 """Build provenance, written by scripts/stamp_build_info.py. Do not edit.

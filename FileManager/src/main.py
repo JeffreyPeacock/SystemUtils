@@ -6,6 +6,7 @@ sys.path.append(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 )
 
+import datetime
 import logging
 import argparse
 from src.db import (
@@ -15,10 +16,16 @@ from src.db import (
 from src.file_ops import scan, check_file, process_file, ScanTally
 from src.reporting import (
     scan_dir_report, report_duplicates, report_duplicate_sizes,
-    report_prefix_count, compare_directories
+    report_prefix_count, compare_directories,
+    # Hoisted out of the report-duplicates and report-files-for-prefix arms to
+    # satisfy #54 requirement 7: the zip importer reopens the archive by its
+    # path, so an import executed mid-run would read whatever .pyz is at that
+    # path *now*, not the one the run started from. A 20-hour scan is long
+    # enough for the file to be replaced under it.
+    report_duplicates_for_prefix, report_files_for_prefix,
 )
 from src.utils import report_settings
-from src.version import describe
+from src.version import NAME, TIME_FORMAT, describe, one_line
 
 # Configure logging
 logging.basicConfig(
@@ -179,6 +186,44 @@ VERSION_FLAGS = ('--version',)
 EXIT_INCOMPLETE = 3
 
 
+def _print_run_header(action, paths, db_path, threads):
+    """Print what this run is, before it does anything (#54 requirement 10).
+
+    On **stdout**, for the same reason the scan counts are (#57): a scheduled
+    scan runs with `2>/dev/null` to suppress the per-file logging, and a header
+    that vanishes under the one redirection every scheduled run uses is not a
+    header. All the per-file diagnostics stay on stderr.
+
+    **The zone is the requirement, not decoration.** Output is read from a log
+    days later, and a bare clock time here has already been read against the
+    wrong zone. `TIME_FORMAT` is shared with the build stamp so the two cannot
+    drift apart.
+
+    This replaces a `logging.info` line that carried the action, paths, database
+    and thread count but went to stderr, had no version, and whose `asctime`
+    had no zone. Nothing grepped it -- checked across the wrappers and tests
+    before removing it.
+
+    `help` and `--version` do not reach here: they are questions about the tool
+    rather than runs of it, and the build verifies `--version` by grepping its
+    output, which a header would sit in front of.
+    """
+    started = datetime.datetime.now().astimezone().strftime(TIME_FORMAT)
+    fields = [
+        ('started', started),
+        ('version', one_line()),
+        ('action', action),
+        ('paths', paths if paths else '(none given)'),
+        ('db', db_path),
+        ('threads', str(threads)),
+    ]
+    width = max(len(label) for label, _ in fields)
+    print(f'{NAME} run')
+    for label, value in fields:
+        print(f'{label.ljust(width)} : {value}')
+    print()
+
+
 def _print_scan_summary(tally):
     """Print the scan's counts to stdout, where a log reader will find them.
 
@@ -333,12 +378,12 @@ def main():
     db_path = args.db_path if args.db_path else 'file_manager.db'
     if os.path.isdir(db_path):
         db_path = os.path.join(db_path, 'file_manager.db')
-    initialize_db(db_path)
 
-    logging.info(
-        f"ACTION: {args.action}; PATH(s): {args.path}; DB: {db_path}; "
-        f"THREADS: {args.threads}"
-    )
+    # Before initialize_db, which creates the file: the header describes a run
+    # that is about to touch something, so it goes out before the first effect.
+    _print_run_header(args.action, args.path, db_path, args.threads)
+
+    initialize_db(db_path)
 
     if args.action == 'scan':
         paths = args.path.split(',') if args.path else []
@@ -356,7 +401,6 @@ def main():
         scan_dir_report(args.path, db_path, args.threads)
     elif args.action == 'report-duplicates':
         if args.prefix:
-            from src.reporting import report_duplicates_for_prefix
             duplicates = report_duplicates_for_prefix(db_path, args.prefix)
         else:
             duplicates = report_duplicates(db_path, args.min_duplicates)
@@ -418,7 +462,6 @@ def main():
             print("Error: --prefix argument is required for report-files-for-prefix action")
             usage()
             return 1
-        from src.reporting import report_files_for_prefix
         files = report_files_for_prefix(db_path, args.prefix)
         print(f"Files with prefix '{args.prefix}':")
         for f in files:

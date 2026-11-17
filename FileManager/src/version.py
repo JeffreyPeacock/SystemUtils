@@ -25,6 +25,14 @@ from src import build_info
 NAME = 'FileManager'
 UNKNOWN = 'CANNOT DETERMINE'
 
+#: The one definition of how this project writes a timestamp. **With the zone**,
+#: which is the whole requirement (#54 requirement 10): output is read from a log
+#: days later, and a bare clock time has already been read against the wrong zone
+#: here. `scripts/stamp_build_info.py` imports this rather than keeping a second
+#: copy -- the build time and the run header are the same kind of fact, and two
+#: format strings is how they come to disagree.
+TIME_FORMAT = '%Y-%m-%d %H:%M:%S %Z'
+
 #: The dirty check is scoped to this directory -- the source the artifact is
 #: built from. An edit to a repo-root README does not make a bundle's source
 #: dirty, and claiming it did would train the reader to pass FM_ALLOW_DIRTY.
@@ -101,3 +109,22 @@ def describe(root: Path | None = None) -> list[str]:
     width = max(len(label) for label, _ in fields)
     lines.extend(f'{label.ljust(width)} : {value}' for label, value in fields)
     return lines
+
+
+def one_line(root: Path | None = None) -> str:
+    """The version as a single line, for the run header.
+
+    `describe()` is the answer to "what is this?" asked directly; this is the
+    same fact folded into one line of a log, where six lines of provenance in
+    front of every run would be read once and skipped forever after.
+    """
+    if build_info.COMMIT is None:
+        root = SOURCE_ROOT if root is None else root
+        return f'{live_commit(root)} (source checkout, {live_tree_state(root)})'
+
+    if build_info.DIRTY is None:
+        state = f'tree state {UNKNOWN.lower()}'
+    else:
+        state = 'built dirty' if build_info.DIRTY else 'clean'
+    built = build_info.BUILD_TIME or UNKNOWN.lower()
+    return f'{build_info.COMMIT} (bundle, built {built}, {state})'
