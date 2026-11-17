@@ -12,7 +12,7 @@ from src.db import (
     initialize_db, audit_db, get_file_info, get_md5_by_path,
     scan_and_report_unique_files, remove_record_by_path, remove_records_by_regex,
 )
-from src.file_ops import scan, check_file, process_file
+from src.file_ops import scan, check_file, process_file, ScanTally
 from src.reporting import (
     scan_dir_report, report_duplicates, report_duplicate_sizes,
     report_prefix_count, compare_directories
@@ -43,6 +43,15 @@ def usage():
         audit-db            Re-verify every recorded path. Drops rows for files
                             that no longer exist and rehashes those that changed.
                             Use --dry-run first: this action deletes rows.
+
+    Exit codes:
+        0                   the action completed and read everything it was asked
+                            to, or help was requested
+        1                   a required argument was missing or invalid
+        2                   argparse rejected the command line
+        3                   scan or audit-db completed but could not read part of
+                            the tree. Some files were recorded and some were not;
+                            the counts and the failed paths are on stdout.
         report-duplicate-sizes Report the total size of duplicate files.
         report-prefix-count Report the number of files that match a given prefix.
         remove-record       Remove the record for exactly the specified path.
@@ -51,7 +60,8 @@ def usage():
         compare-directories Compare two directories and report unique files.
         get-file-info       Get information of a file from the database.
         scan-unique-files   Scan a directory and report unique files.
-        help                Show this help message.
+        help                Show this help message. `-h`, `--help` and `-?`
+                            do the same and also exit 0.
 
     Options:
         --db-path           Path to the database file or directory.
@@ -125,16 +135,74 @@ def get_file_info_action(db_path, file_path):
     else:
         print(f"No information found for file: {file_path}")
 
+# The conventional ways to ask for help. Checked against the command line
+# directly rather than registered with argparse, for two reasons that both have
+# to hold at once (#58):
+#
+#   * the help text is `usage()`, which documents the actions, the options, the
+#     exit codes and worked examples. argparse's generated help has none of that.
+#   * `action` is a required positional, so `main.py --help` with nothing else
+#     would fail the missing-argument check before argparse looked at the flag.
+#
+# `-?` is included because it is conventional, with the caveat that `?` is a
+# shell glob character: it needs quoting as `'-?'` in some shells.
+HELP_FLAGS = ('-h', '--help', '-?')
+
+
+# An action that ran to completion but could not read part of what it was asked
+# to read. Distinct from 1 (bad argument) and 2 (argparse rejection), both of
+# which mean nothing was recorded at all. See main()'s docstring and #57.
+EXIT_INCOMPLETE = 3
+
+
+def _print_scan_summary(tally):
+    """Print the scan's counts to stdout, where a log reader will find them.
+
+    stdout, not the logging stream: the counts are the result of the run, not a
+    diagnostic, and they have to survive `2>/dev/null`. The leading newline is
+    load-bearing -- `process_file` writes a bare "." to stdout per skipped file,
+    so without it the summary lands at the end of a long line of dots.
+    """
+    print()
+    for line in tally.summary_lines():
+        print(line)
+
+
+def _print_audit_summary(counts):
+    """The same, for audit-db. It logs its own INFO summary as well; this is the
+    copy that reaches stdout and names what could not be read."""
+    print()
+    print(
+        f"audit complete: checked {counts['checked']}, "
+        f"removed {counts['removed']}, reprocessed {counts['reprocessed']}, "
+        f"skipped {counts['skipped']}, suspect {counts['suspect']}, "
+        f"failed {counts['failed']}"
+    )
+    failures = counts.get('failures') or []
+    if failures:
+        print(f"failed ({counts['failed']}):")
+        for path, message in failures[:20]:
+            print(f"  {path}: {message}")
+        if len(failures) > 20:
+            print(f"  ... and {len(failures) - 20} more; each is on an ERROR line in the log")
+
+
 def main():
     """Run one CLI action.
 
     Returns:
         int: 0 on success, 1 when an argument is missing or invalid, 2 when
-            argparse itself rejected the command line. `main.py` used to
-            `return` from every one of these branches, which exits 0 -- so an
-            invalid invocation was indistinguishable from success to any caller
-            checking $?, including the fm-*.sh wrappers running under set -e
-            (#23).
+            argparse itself rejected the command line, 3 when the action ran to
+            completion but could not read part of what it was asked to read.
+            `main.py` used to `return` from every one of these branches, which
+            exits 0 -- so an invalid invocation was indistinguishable from
+            success to any caller checking $?, including the fm-*.sh wrappers
+            running under set -e (#23).
+
+            3 is separate from 1 and 2 on purpose: a caller needs to tell a bad
+            command line, which recorded nothing, from a scan that recorded most
+            of a tree and skipped the rest. Both are failures; only one leaves a
+            partial index behind (#57).
     """
     parser = argparse.ArgumentParser(
         description='File Manager Application', add_help=False
@@ -188,9 +256,27 @@ def main():
         help='Comma-separated list of prefixes to exclude paths from processing during audit-db'
     )
 
+    # Before parsing: see HELP_FLAGS. Asking for help is not an error, and it
+    # must work with no action given.
+    if any(arg in HELP_FLAGS for arg in sys.argv[1:]):
+        usage()
+        return 0
+
     try:
         args = parser.parse_args()
-    except SystemExit:
+    except SystemExit as exc:
+        # Respect the code argparse chose instead of flattening every exit to 2.
+        # Returning 2 unconditionally meant a SystemExit(0) -- which is what
+        # argparse raises for its own --help, and will raise for the --version
+        # action in #54 -- was reported as a rejection. Same shape as #23, where
+        # every branch `return`ed and so exited 0 whatever had happened.
+        # `exc.code` is compared directly. It can be an int, a string or None;
+        # only an int 0 means success, and neither a string nor None equals 0,
+        # so both land on the rejection path without a type check. A type check
+        # was tried here and removed: it could not be made to change any
+        # observable behaviour, and a guard that cannot fail is noise.
+        if exc.code == 0:
+            return 0
         usage()
         return 2
 
@@ -225,8 +311,14 @@ def main():
 
     if args.action == 'scan':
         paths = args.path.split(',') if args.path else []
+        # One tally across every path in the comma-separated list: the caller
+        # asked for one scan, so one answer about whether it was complete.
+        tally = ScanTally()
         for path in paths:
-            scan(path.strip(), db_path, args.threads)
+            scan(path.strip(), db_path, args.threads, tally)
+        _print_scan_summary(tally)
+        if tally.failed:
+            return EXIT_INCOMPLETE
     elif args.action == 'check-file':
         check_file(args.path, db_path)
     elif args.action == 'scan-dir-report':
@@ -256,10 +348,13 @@ def main():
             ('dry_run', args.dry_run, _origin('--dry-run')),
             ('prune_missing_dirs', args.prune_missing_dirs, _origin('--prune-missing-dirs')),
         ])
-        audit_db(db_path, args.threads, process_file,
-                 exclude_prefix=exclude_prefixes,
-                 dry_run=args.dry_run,
-                 prune_missing_dirs=args.prune_missing_dirs)
+        counts = audit_db(db_path, args.threads, process_file,
+                           exclude_prefix=exclude_prefixes,
+                           dry_run=args.dry_run,
+                           prune_missing_dirs=args.prune_missing_dirs)
+        _print_audit_summary(counts)
+        if counts['failed']:
+            return EXIT_INCOMPLETE
     elif args.action == 'report-duplicate-sizes':
         report_duplicate_sizes(db_path)
     elif args.action == 'report-prefix-count':

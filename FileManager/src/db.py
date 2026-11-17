@@ -448,14 +448,18 @@ def audit_db(db_path, num_threads, process_file, exclude_prefix=None,
 
     Returns:
         dict: counts keyed 'removed', 'reprocessed', 'skipped', 'suspect',
-            'checked'. On a dry run 'removed' and 'reprocessed' are what *would*
-            have happened.
+            'checked', 'failed', plus 'failures' as a list of (path, message).
+            On a dry run 'removed' and 'reprocessed' are what *would* have
+            happened. **The caller must read 'failed'** -- an audit that could
+            not read part of the tree returns normally, and turning that into an
+            exit status is the caller's job (#57).
     """
     batch_size = 100
     processed_files_count = 0
     counts = {'removed': 0, 'reprocessed': 0, 'skipped': 0,
-              'suspect': 0, 'checked': 0}
+              'suspect': 0, 'checked': 0, 'failed': 0}
     suspect_paths = []
+    failures = []
 
     def process_file_info(file_info):
         nonlocal processed_files_count
@@ -505,12 +509,20 @@ def audit_db(db_path, num_threads, process_file, exclude_prefix=None,
                 batch = cursor.fetchmany(batch_size)
                 if not batch:
                     break
-                futures = [executor.submit(process_file_info, file_info) for file_info in batch]
+                # Keyed by path, so a failure can name the row it was
+                # auditing. It used to be a bare list, and the error line said
+                # only "Error processing file info", which is not something
+                # anyone can act on (#57).
+                futures = {executor.submit(process_file_info, file_info): file_info[0]
+                           for file_info in batch}
                 for future in as_completed(futures):
+                    file_path = futures[future]
                     try:
                         future.result()
                     except Exception as e:
-                        logging.error(f"Error processing file info: {e}")
+                        logging.error(f"Error auditing {file_path}: {e}")
+                        counts['failed'] += 1
+                        failures.append((file_path, str(e)))
 
     with_connection(db_path, work, description="audit the database")
 
@@ -520,8 +532,10 @@ def audit_db(db_path, num_threads, process_file, exclude_prefix=None,
     logging.info(
         f"AUDIT {'(dry run) ' if dry_run else ''}checked {counts['checked']}: "
         f"{verb} {counts['removed']}, reprocessed {counts['reprocessed']}, "
-        f"skipped {counts['skipped']}, suspect {counts['suspect']}"
+        f"skipped {counts['skipped']}, suspect {counts['suspect']}, "
+        f"failed {counts['failed']}"
     )
+    counts['failures'] = failures
     if suspect_paths:
         logging.warning(
             f"{len(suspect_paths)} row(s) kept because their directory is also "
