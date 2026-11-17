@@ -85,7 +85,23 @@ its own database and the file changes under it as it goes.
 
 ### What a run tells you, and its exit code
 
-`scan` and `audit-db` end with a summary on **stdout**:
+Every action opens with a header on **stdout**, so a log read days later says
+what the run was configured to do:
+
+```
+FileManager run
+started : 2026-11-17 13:20:32 MST
+version : b91d5ae447714e46e2127727c155b0b3fb283c4f (source checkout, clean)
+action  : scan
+paths   : /home2
+db      : /var/lib/filemanager/home2.db
+threads : 8
+```
+
+The zone is deliberate: a bare clock time has already been read against the
+wrong zone here. `help` and `--version` print no header.
+
+`scan` and `audit-db` then end with a summary, also on **stdout**:
 
 ```
 scan complete: 4821 hashed, 1337903 skipped unchanged, 2 failed
@@ -214,16 +230,16 @@ Python 3.14.7 via the `sys-utils` pyenv-virtualenv, then
 `pip install -r requirements-dev.txt`.
 
 ```bash
-python -m pytest              # 295 tests; coverage on, floor enforced
+python -m pytest              # 326 tests; coverage on, floor enforced
 python -m pytest --no-cov -q  # faster while iterating
 python -m mypy src/           # must be clean
 ```
 
 ### Testing
 
-295 tests in 22 modules, no xfails. `pytest.ini` enables branch coverage, writes
+326 tests in 24 modules, no xfails. `pytest.ini` enables branch coverage, writes
 `coverage.xml` and `test-results.xml`, and fails under **99%** — the current real
-measurement is 99.66%, which meets the 95% `docs/REQUIREMENTS.txt` has asked for
+measurement is 99.67%, which meets the 95% `docs/REQUIREMENTS.txt` has asked for
 since 2024. **Nothing is excluded from measurement**: `src/gui.py` was the only
 omission and it left with the GUI in #51, so `.coveragerc` has no `omit` key at
 all. The gap was closed by epic
@@ -271,7 +287,6 @@ filtered by `component:file-manager`. The GUI tickets #3 and #11 closed with
 Worth reading before relying on this database to detect corruption:
 
 - **#50** — neither `scan` nor `audit-db` can detect silent corruption. Both compare `(size, mtime)` and skip hashing when they match, so a rescan skips exactly the files whose contents were in question: bit rot, a bad sector and a failing cable all rewrite bytes without changing size or mtime. The baseline is recorded correctly; nothing reads it back.
-- **#54** — what is left of the packaging spec: a timestamped header with the zone, and the rest of the artifact test. `--version` carrying the build commit was split out as #62 and has landed, which clears the Desktop-Ops installer's gate.
 - **#60** — `audit_db` returns a dict typed `dict[str, Any]`; a `TypedDict` would type every field and let `src/main.py` be checked against it.
 
 Four silent-wrong-answer paths are fixed: #1 and #2; #43, where

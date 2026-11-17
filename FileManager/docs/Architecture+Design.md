@@ -622,3 +622,76 @@ the test that covers it. Recorded because the lesson is not "write a test" but
 that checking found one that could not (§3a, and #57's lock test).
 
 **Related issues:** #62, #54, #52, #58, #41
+
+---
+
+## A run states its configuration on the channel that survives redirection
+
+A scan of `/home2` takes 20+ hours, runs as root from cron, and produces a
+database a human will later delete files on the strength of. The only durable
+account of it is its log — read days afterwards, by which time the command line,
+the working directory and the state of the checkout are all gone.
+
+There was already a line recording four of the right things:
+
+```python
+logging.info(f"ACTION: {args.action}; PATH(s): {args.path}; DB: {db_path}; THREADS: {args.threads}")
+```
+
+**It could not do the job, for three separate reasons.** It went to the logging
+stream, which is stderr, and every scheduled scan runs with `2>/dev/null` to
+suppress the per-file chatter — so the one record of the configuration was thrown
+away by the one redirection the real runs all use. It named no version, so the
+log could not be tied to the code. And its `asctime` had no zone, which has
+already caused output here to be read against the wrong one.
+
+**The decision: a header on stdout, before the first side effect, with the zone.**
+Same channel as the scan counts and for the same reason (#57) — the result of a
+run and the configuration of a run are both results, not diagnostics. The
+per-file logging stays on stderr, where suppressing it remains safe.
+
+`help` and `--version` are excluded. They are questions about the tool rather
+than runs of it, and `build-pyz.sh` verifies the artifact by grepping
+`--version` output: a header in front of that would turn a passing build check
+into a failing one.
+
+**One definition of the timestamp format.** `TIME_FORMAT` lives in
+`src/version.py` and `scripts/stamp_build_info.py` imports it rather than
+keeping a copy, at the cost of the stamper putting the project root on
+`sys.path`. The build time recorded in an artifact and the start time printed by
+a run are the same kind of fact; two format strings is how they come to
+disagree, and the same argument as `scripts/lib/mask.py` holding the only copy
+of the secret patterns.
+
+### Why "no imports inside functions" is a correctness rule here, not style
+
+Requirement 7 of #54 reads like a style preference and is not one. Python's zip
+importer resolves a module by **reopening the archive at its path**. A `.pyz`
+replaced during a run — an install, an upgrade, a rebuild — leaves the running
+process reading the *new* archive for every module it has not yet imported. A
+20-hour root scan is long enough for that to happen, and the result is a process
+running half of one version and half of another, producing a database that
+cannot be accounted for afterwards.
+
+Two report arms imported from `src.reporting` lazily until #54. They are hoisted,
+and `tests/test_imports_at_startup.py` parses every module under `src/` with
+`ast` and fails on a function-level import. `ast` rather than a text search
+because a regex cannot distinguish an import statement from the word "import" in
+a docstring — the same choice `tests/test_db_owns_the_connection.py` made.
+
+### What requirement 8 actually required
+
+"No file access relative to `__file__`" is easy to read as "do not call
+`open(__file__)`", which nothing here does. The real risk is subtler.
+`src/version.py` computes `SOURCE_ROOT` from `__file__`; inside an archive that
+is a path like `/…/FileManager.pyz/src/version.py`, naming a directory that does
+not exist. The value is **computed but inert**: a bundle reads its commit from
+`build_info` and never consults git, so the path is never used.
+
+Nothing in the suite would have noticed that changing. A fallback to asking git
+at run time would pass every version test on any machine that has git installed.
+So `--version` is also run from the built bundle with `PATH=/nonexistent/bin`:
+the one condition under which the difference between "embedded" and "looked up"
+is observable.
+
+**Related issues:** #54, #62, #57, #52, #9
