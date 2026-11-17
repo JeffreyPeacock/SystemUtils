@@ -24,7 +24,7 @@ below worth reading before changing anything.
 graphical user-interface" requirement is **not met here, and will not be**: the
 GUI left this project in #51 and becomes a separate application (#53). This is
 a headless CLI scanner — no Tk, no display, no optional GUI flag. The 95%
-coverage requirement is **met**, at 99.67%; epic #8 and its children #32-#36
+coverage requirement is **met**, at 99.71%; epic #8 and its children #32-#36
 and #45 are closed.
 
 ## Tech Stack
@@ -57,6 +57,11 @@ python src/main.py --threads 8 --db-path /path/to/db.db scan /dir/one,/dir/two
 python src/main.py --threads 8 --db-path /path/to/db.db audit-db --dry-run
 python src/main.py --threads 8 --db-path /path/to/db.db audit-db \
     --exclude-prefix /mnt/offline,/mnt/other
+
+# Read the stored checksums BACK. The only action that detects corruption.
+# Read-only on the database. Exits 4 on a mismatch, 3 on an unreadable file.
+python src/main.py --threads 8 --db-path /path/to/db.db verify-db
+python src/main.py --db-path /path/to/db.db verify-db --prefix /mnt/backup
 
 # Remove records. LITERAL by default; --regex matches the WHOLE path.
 python src/main.py --db-path /path/to/db.db remove-record /exact/path
@@ -96,10 +101,10 @@ rebuilds it in CI; its load-bearing assertion is that the archive holds no
 
 ## Testing
 
-**330 tests across 25 modules, all passing, no xfails.** Coverage is on by default
+**359 tests across 26 modules, all passing, no xfails.** Coverage is on by default
 via `pytest.ini` (`--cov=src --cov-branch`), writes `coverage.xml` and
 `test-results.xml`, and enforces `--cov-fail-under=99` against a measured
-**99.67%** combined line+branch coverage.
+**99.71%** combined line+branch coverage.
 
 Per-module figures live in `.coverage-summary.md`, regenerated every run and
 committed — read that rather than duplicating a table here that goes stale. As
@@ -206,7 +211,7 @@ regenerates the numbered files.
 beyond argument validation. Below it is a flat module layer, no classes:
 
 - `src/db.py` — the only module that calls `sqlite3.connect`. Owns the schema, every query, and the lock-retry behaviour, all through one gateway: `with_connection(db_path, work, commit=...)`. Also owns `UniquenessUnknown`, raised when a file's uniqueness cannot be determined — never answered as `False`, which is a verdict (#41).
-- `src/file_ops.py` — directory walking and the decision of whether a file needs hashing. `process_file` is the core routine.
+- `src/file_ops.py` — directory walking and the decision of whether a file needs hashing. `process_file` is the core routine. Also `verify_db` and `VerifyTally` (#50): the orchestration lives here because it is a decision about hashing, while its one bulk query, `db.recorded_checksums`, lives in `db.py` with every other statement.
 - `src/reporting.py` — formats and prints; every query it runs is a `db.py` function (#10). It must not import `sqlite3`, and `tests/test_db_owns_the_connection.py` fails if it does.
 - `src/version.py`, `src/build_info.py` — what `--version` prints. `build_info.py` is **data only**, because the build overwrites it; every line of logic and the live-git fallback are in `version.py` (#62).
 - `src/md5sum.py`, `src/utils.py` — `compute_md5` (4 KB chunks), `get_file_mtime_in_ms`,
@@ -282,6 +287,8 @@ rewritten the same day when #6 and #7 landed.
 - **`audit-db` keeps rows whose *directory* is also missing.** A deleted file leaves its parent directory behind; an unmounted volume does not. Rows in the second case are reported as `SUSPECT` and **not** removed, so a failed mount no longer empties a subtree (#2). The cost is that a directory you genuinely deleted also survives — `--prune-missing-dirs` removes those deliberately, and `--dry-run` shows either case first.
 - **`remove-record` is literal by default.** `--regex` opts into pattern matching, and the pattern must match the **whole** path (`re.fullmatch`). Deleting a subtree is therefore explicit: `'/a/b/.*'`. Before #1 the argument was always a prefix-anchored regex, so a literal `/a/b` also deleted `/a/bc`.
 - **An invalid invocation exits non-zero.** 1 for a missing or invalid argument, 2 for an argparse rejection, 0 for `help` (#23). Scripts under `set -e` therefore stop, which they did not before.
+- **`verify-db` is the only action that can detect corruption, and it never writes.** `scan` and `audit-db` both compare `(size, mtime)` and skip hashing when they match, so they skip exactly the files whose contents were in question — bit rot, a bad sector and a failing cable all rewrite bytes without touching either (#50). `verify-db` rehashes unconditionally and compares against the **stored** `md5sum`. It issues one read query and no writes, deliberately: a verify that repaired the baseline on a mismatch would destroy the only evidence *and* pass on its second run. Three outcomes, never two — match, mismatch, could-not-read — and an unreadable file is **not** a pass. `tests/test_verify_db.py` also records that `scan` and `audit-db` still miss corruption in place, because that is the action's whole reason for existing.
+- **A mismatch exits 4, which is deliberately not 3.** 3 means part of the answer is unknown; 4 means the answer is known and bad, and an operator does something different about each. A mismatch outranks an unreadable file when both happen in one run.
 - **An incomplete scan exits 3, and the counts are on stdout.** `scan` and `audit-db` print `scan complete: N hashed, N skipped unchanged, N failed` followed by each failed path, and return **3** if anything failed (#57). 3 is deliberately not 1 or 2: those mean nothing was recorded, while 3 means part of the tree was recorded and part was not. Before this, an unreadable file produced one ERROR line among the per-file log lines and **exit 0**, so a partial index was indistinguishable from a complete one — and it cannot be detected afterwards, because the database looks the same whether a file was absent or unreadable. A path on the command line that is neither a file nor a directory counts as a failure for the same reason. The summary goes to **stdout** while all logging goes to stderr, so it survives the `2>/dev/null` a scheduled scan uses.
 - **Every action prints a header on stdout before it does anything** (#54 requirement 10): the start time *with its zone*, the version, the action, the paths, the database and the thread count. stdout rather than the logging stream, because a scheduled scan runs with `2>/dev/null`. `help` and `--version` do **not** print it -- they are questions about the tool rather than runs of it, and `scripts/build-pyz.sh` verifies the artifact by grepping `--version` output, which a header would sit in front of. This replaced a `logging.info` line that carried four of the same fields on stderr, with no version and no zone. `TIME_FORMAT` in `src/version.py` is the one definition of the format and the build stamper imports it.
 - **No module under `src/` may import inside a function** (#54 requirement 7), and `tests/test_imports_at_startup.py` fails on one. The zip importer reopens the archive **by its path** on every resolution, so an import executed mid-run reads whichever `.pyz` is at that path then -- and an unattended scan runs 20+ hours, long enough for the file to be replaced under it. Two report arms did this lazily until #54.
@@ -337,12 +344,12 @@ Five silent-wrong-answer paths are fixed — #1 (prefix-anchored removal), #2
 reported as a complete one). The coverage epic **#8** is closed, the GUI tickets
 #3 and #11 closed with #51 when the GUI left, and #58 fixed `--help` exiting 2.
 
-**#50 is the one to read before trusting this database for integrity
-checking.** Neither `scan` nor `audit-db` can detect silent corruption: both
-compare `(size, mtime)` and skip hashing when they match, so a rescan skips
-exactly the files whose contents were in question. Bit rot, a bad sector and a
-failing cable all rewrite bytes without touching size or mtime. The baseline
-scan is correct; nothing reads it back. Demonstrated on the ticket.
+**#50 closed with `verify-db`**, so the database can now be read back: a
+recorded file whose contents changed under it is reported with both checksums
+and exits 4. `scan` and `audit-db` still cannot detect corruption and are not
+meant to — the `(size, mtime)` skip is what makes rescanning a large tree cheap.
+Use `verify-db` for integrity, scoped with `--prefix` since verifying the
+recorded volumes takes hours.
 
 **The zipapp spec #54 is closed.** Requirements 1-5 and 8 landed in #52, 11 as
 #57, 9 as #62, and 7, 10 and 12 in PR #64 — so the bundle is installable and the

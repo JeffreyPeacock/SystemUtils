@@ -3,18 +3,17 @@
 The SystemUtils project board (#14) on GitHub holds the authoritative detail; this doc is the
 at-a-glance ordering view the board doesn't give cleanly.
 
-**Snapshot:** 2026-11-17 13:32 MST · 2 open · 1 Ready, 1 Backlog
+**Snapshot:** 2026-11-17 13:40 MST · 1 open · 1 Backlog
 
-|  Pri   | #  |  Status |   Area   | Title | Note |
-|:------:|:--:|:-------:|:--------:|-------|------|
-| **p2** | 50 |  Ready  | Scanning | No way to verify stored checksums: scan and<br>audit-db both skip on (size, mtime) and miss<br>corruption | The read-back half of the integrity problem: the<br>baseline is recorded correctly and nothing ever<br>checks it. `/home2` is btrfs, which already<br>checksums data and is scrubbed, so the real case is<br>the ext4 backup volume. Pairs with #57 — a gap in<br>the index and an unverified index fail the same<br>way. |
-| **p4** | 53 | Backlog |   GUI    | New utility: a GUI duplicate browser and editor,<br>separate from the CLI scanner | Carries the decision from #11 — the requirements<br>gap was resolved by making the GUI its own<br>application rather than revising the requirement.<br>Carries the defect from #3 as well: the old GUI<br>wrote `PY_VAR3`, the checkbox object, not a path,<br>so its `rm_commands.txt` was never runnable. Build<br>the path logic outside the widget tree this time.<br>Still needs a name and its own `component:` label. |
+|  Pri   | #  |  Status | Area| Title | Note |
+|:------:|:--:|:-------:|:---:|-------|------|
+| **p4** | 53 | Backlog | GUI | New utility: a GUI duplicate browser and editor,<br>separate from the CLI scanner | Carries the decision from #11 — the requirements<br>gap was resolved by making the GUI its own<br>application rather than revising the requirement.<br>Carries the defect from #3 as well: the old GUI<br>wrote `PY_VAR3`, the checkbox object, not a path,<br>so its `rm_commands.txt` was never runnable. Build<br>the path logic outside the widget tree this time.<br>Still needs a name and its own `component:` label. |
 
 ## Tally
 
 | Priority | p1 | p2 | p3 | p4 | p5 | — | Total |
 |----------|---:|---:|---:|---:|---:|--:|------:|
-| Open | 0 | 1 | 0 | 1 | 0 | 0 | 2 |
+| Open | 0 | 0 | 0 | 1 | 0 | 0 | 1 |
 
 &nbsp;
 

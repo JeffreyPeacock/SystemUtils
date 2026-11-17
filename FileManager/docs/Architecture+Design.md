@@ -695,3 +695,78 @@ the one condition under which the difference between "embedded" and "looked up"
 is observable.
 
 **Related issues:** #54, #62, #57, #52, #9
+
+---
+
+## Reading the baseline back is a separate action, and it must not repair
+
+The database stores `(md5sum, size, last_modified, path)` and the whole point of
+the checksum is to answer "are these bytes still the bytes I recorded?". Until
+#50 nothing asked. `scan` and `audit-db` both compare `(size, mtime)` and skip
+hashing when they match — which is exactly what makes rescanning a multi-terabyte
+archive affordable, and exactly why neither can see corruption: bit rot, a bad
+sector and a failing cable all rewrite bytes without touching either field. On a
+file rewritten in place with its mtime restored, `scan` reports `0 hashed, 2
+skipped unchanged, 0 failed` and `audit-db` reports `failed 0`. Both are correct
+about what they measure and both answer the wrong question.
+
+**The decision: a separate action, `verify-db`, that rehashes unconditionally.**
+Not a flag on `scan` — the skip check is `scan`'s reason for existing and a
+`--force-rehash` would make the cheap path and the expensive path the same code
+with opposite performance characteristics. Named as a counterpart to `audit-db`:
+that one re-verifies metadata, this one re-verifies content.
+
+**It is read-only on the database, and that is the load-bearing decision.** The
+obvious next step after detecting a mismatch — update the row — would be wrong
+twice over. It destroys the only evidence that the file ever differed, and it
+makes the second run pass, so a scheduled verify would report a problem once and
+then be silent forever. A test runs the verify twice and asserts the mismatch is
+still reported.
+
+**Three outcomes, never two.** Match, mismatch, could-not-read. An unreadable
+file is **not** a pass: its stored checksum is still unverified, which is the
+same distinction `UniquenessUnknown` draws (#41) and the same one the scan's
+failed count draws (#57).
+
+### Exit 4, and why it is not 3
+
+| code | the operator's question it answers |
+|---|---|
+| 3 | part of what I asked about is **unknown** — check the volume, run it again |
+| 4 | the answer is **known and bad** — a recorded file's contents have changed |
+
+Those call for different actions, so they are different codes. Collapsing them
+into "non-zero" would repeat the mistake this area of the code has been fixed
+for twice already (#23, #57). A mismatch outranks an unreadable file when both
+happen in one run: the definite wrong answer in the database is the more
+important fact.
+
+### Scoping: a prefix, not a resume log
+
+Verifying the recorded volumes takes hours, so a run has to be able to be
+smaller than all of it. #50 allowed "restartable **or** prefix-scoped" and the
+prefix was chosen. A resume log is state that can go stale against the database
+— and `scan-unique-files` already demonstrates the second problem with the idea:
+its `.processed_files.txt` lands *inside* the tree being scanned and is then
+scanned like any other file. A prefix is stateless, and the operator picks the
+subtree. `recorded_checksums` orders by path so two runs over one prefix report
+in the same order and their output can be diffed.
+
+### What the tests had to prove
+
+Two mutations, because this action's value is entirely in catching a case
+everything else misses:
+
+- `verify_one_recording` made to trust `(size, mtime)` instead of rehashing — the
+  original defect, reintroduced — **fails 14 tests**.
+- A mismatch made to rewrite the stored row, as a well-meaning repair would —
+  **fails exactly the test written for it**.
+
+The corruption fixture also asserts on its own effect, comparing size and
+`st_mtime_ns` before and after, so a fixture that silently stopped preserving
+them would fail rather than quietly test nothing. And the suite keeps a test
+stating that `scan` and `audit-db` *still* miss corruption in place: it records
+the premise, and if it ever starts failing, this design should be re-read before
+being trusted.
+
+**Related issues:** #50, #57, #41, #23

@@ -49,9 +49,14 @@ python src/main.py --db-path /path/to/db.db report-duplicates --min-duplicates 2
 python src/main.py --db-path /path/to/db.db report-duplicate-sizes
 python src/main.py --db-path /path/to/db.db report-prefix-count --prefix /mnt/x
 
-# Re-verify the database against the filesystem
+# Re-verify the database against the filesystem (metadata)
 python src/main.py --threads 8 --db-path /path/to/db.db audit-db \
     --exclude-prefix /mnt/offline
+
+# Re-verify the CONTENTS against the stored checksums. Read-only; exits 4 on a
+# mismatch. The only action that detects corruption.
+python src/main.py --threads 8 --db-path /path/to/db.db verify-db
+python src/main.py --db-path /path/to/db.db verify-db --prefix /mnt/backup
 
 python src/main.py help    # every action and option
 ```
@@ -68,6 +73,7 @@ python src/main.py help    # every action and option
 | `report-prefix-count` | Count recorded files under a path prefix |
 | `report-files-for-prefix` | List recorded files under a path prefix |
 | `audit-db` | Re-check every recorded path; drop rows for files that are gone, rehash those that changed |
+| `verify-db` | Rehash recorded files and compare against the **stored** checksum; the only action that detects corruption. Never writes |
 | `remove-record` | Delete database rows whose path matches a regex |
 | `compare-directories` | Hash two trees in full and report what is unique to each |
 | `get-file-info` | Print the stored size, mtime, and checksum for one path |
@@ -119,6 +125,7 @@ All the per-file logging goes to stderr, so the summary survives the
 | 1 | a required argument was missing or invalid |
 | 2 | `argparse` rejected the command line |
 | 3 | it completed but **could not read part of the tree** |
+| 4 | `verify-db` found a file whose contents no longer match its stored checksum |
 
 **3 is the one that matters for an unattended run.** Some files were recorded and
 some were not, and that gap cannot be found afterwards: the database looks the
@@ -230,16 +237,16 @@ Python 3.14.7 via the `sys-utils` pyenv-virtualenv, then
 `pip install -r requirements-dev.txt`.
 
 ```bash
-python -m pytest              # 330 tests; coverage on, floor enforced
+python -m pytest              # 359 tests; coverage on, floor enforced
 python -m pytest --no-cov -q  # faster while iterating
 python -m mypy src/           # must be clean
 ```
 
 ### Testing
 
-330 tests in 25 modules, no xfails. `pytest.ini` enables branch coverage, writes
+359 tests in 26 modules, no xfails. `pytest.ini` enables branch coverage, writes
 `coverage.xml` and `test-results.xml`, and fails under **99%** — the current real
-measurement is 99.67%, which meets the 95% `docs/REQUIREMENTS.txt` has asked for
+measurement is 99.71%, which meets the 95% `docs/REQUIREMENTS.txt` has asked for
 since 2024. **Nothing is excluded from measurement**: `src/gui.py` was the only
 omission and it left with the GUI in #51, so `.coveragerc` has no `omit` key at
 all. The gap was closed by epic
@@ -282,12 +289,12 @@ one means adding it to the other.
 
 Tracked on the [SystemUtils board](https://github.com/users/JeffreyPeacock/projects/14),
 filtered by `component:file-manager`. The GUI tickets #3 and #11 closed with
-#51, when the GUI left this project for one of its own (#53).
+#51, when the GUI left this project for one of its own (#53) — which is the only
+FileManager ticket still open.
 
-Worth reading before relying on this database to detect corruption:
-
-- **#50** — neither `scan` nor `audit-db` can detect silent corruption. Both compare `(size, mtime)` and skip hashing when they match, so a rescan skips exactly the files whose contents were in question: bit rot, a bad sector and a failing cable all rewrite bytes without changing size or mtime. The baseline is recorded correctly; nothing reads it back.
-
-Four silent-wrong-answer paths are fixed: #1 and #2; #43, where
-`scan-dir-report` never returned at all until its shutdown was tested; and #41,
-where a file that could not be read was reported as a duplicate.
+Six silent-wrong-answer paths are fixed: #1 and #2; #43, where
+`scan-dir-report` never returned at all until its shutdown was tested; #41,
+where a file that could not be read was reported as a duplicate; #57, where a
+scan that could not read part of a tree still exited 0; and #50, where a
+corrupted file was skipped by both `scan` and `audit-db` because its size and
+mtime had not changed.
