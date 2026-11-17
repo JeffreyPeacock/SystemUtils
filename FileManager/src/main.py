@@ -10,6 +10,7 @@ import datetime
 import logging
 import argparse
 from src.db import (
+    AuditCounts,
     initialize_db, audit_db, get_file_info, get_md5_by_path,
     scan_and_report_unique_files, remove_record_by_path, remove_records_by_regex,
 )
@@ -237,7 +238,7 @@ def _print_scan_summary(tally):
         print(line)
 
 
-def _print_audit_summary(counts):
+def _print_audit_summary(counts: AuditCounts) -> None:
     """The same, for audit-db. It logs its own INFO summary as well; this is the
     copy that reaches stdout and names what could not be read."""
     print()

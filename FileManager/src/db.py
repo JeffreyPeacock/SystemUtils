@@ -5,7 +5,7 @@ import re
 import sqlite3
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Any
+from typing import TypedDict
 
 from src.md5sum import compute_md5
 from src.utils import get_file_mtime_in_ms
@@ -300,7 +300,7 @@ def find_duplicates_with_min_count(db_path, min_count=2):
         description="find duplicates",
     )
 
-    duplicates = {}
+    duplicates: dict[str, list[str]] = {}
     for md5sum, path in rows:
         duplicates.setdefault(md5sum, []).append(path)
     return duplicates
@@ -409,7 +409,7 @@ def find_duplicates_under_prefix(db_path, prefix):
         (f"{prefix}%",),
         description="find duplicates under a prefix",
     )
-    md5_to_paths = {}
+    md5_to_paths: dict[str, list[str]] = {}
     for md5sum, path in rows:
         md5_to_paths.setdefault(md5sum, []).append(path)
     return {md5sum: paths for md5sum, paths in md5_to_paths.items() if len(paths) > 1}
@@ -433,6 +433,31 @@ def looks_like_a_missing_volume(file_path):
     return not os.path.exists(file_path) and not os.path.isdir(parent)
 
 
+class AuditCounts(TypedDict):
+    """What an audit did, and what it could not read.
+
+    A TypedDict rather than `dict[str, Any]` (#60) because the values are
+    genuinely heterogeneous -- six counters and a list of failures -- and `Any`
+    switches off checking for every caller rather than describing the shape.
+    `src/main.py` is not on the `check_untyped_defs` opt-out list, so it only
+    typechecked before this because `audit_db` returned `Any` out of an
+    unchecked module: a precise type here is what lets the caller be checked at
+    all.
+
+    **`failed` is the field a caller must read.** An audit that could not read
+    part of the tree returns normally; turning that into an exit status is the
+    caller's job (#57).
+    """
+
+    checked: int
+    removed: int
+    reprocessed: int
+    skipped: int
+    suspect: int
+    failed: int
+    failures: list[tuple[str, str]]
+
+
 def audit_db(db_path, num_threads, process_file, exclude_prefix=None,
              dry_run=False, prune_missing_dirs=False):
     """
@@ -448,8 +473,9 @@ def audit_db(db_path, num_threads, process_file, exclude_prefix=None,
             gone. Off by default -- see `looks_like_a_missing_volume`.
 
     Returns:
-        dict: counts keyed 'removed', 'reprocessed', 'skipped', 'suspect',
-            'checked', 'failed', plus 'failures' as a list of (path, message).
+        AuditCounts: counts keyed 'removed', 'reprocessed', 'skipped',
+            'suspect', 'checked', 'failed', plus 'failures' as a list of
+            (path, message).
             On a dry run 'removed' and 'reprocessed' are what *would* have
             happened. **The caller must read 'failed'** -- an audit that could
             not read part of the tree returns normally, and turning that into an
@@ -457,17 +483,17 @@ def audit_db(db_path, num_threads, process_file, exclude_prefix=None,
     """
     batch_size = 100
     processed_files_count = 0
-    # Annotated because 'failures' holds a list of (path, message) while every
-    # other key holds an int. mypy infers dict[str, int] from the literal and
-    # then rejects the list, and `src.db` is on the check_untyped_defs opt-out
-    # list in mypy.ini -- so without this the error is simply not reported, and
-    # the opt-out ends up hiding a new fault rather than a known one. A TypedDict
-    # is the better shape here and would let the dict stay homogeneous; that is a
-    # change to this function's contract and its three callers, not a drive-by.
-    counts: dict[str, Any] = {'removed': 0, 'reprocessed': 0, 'skipped': 0,
-                              'suspect': 0, 'checked': 0, 'failed': 0}
+    # Every key is declared, including 'failures', so the literal satisfies a
+    # total TypedDict rather than being filled in later and typed `Any` to hide
+    # the gap. #57 added 'failures' to a dict mypy had inferred as
+    # dict[str, int]; the error went unreported because `src.db` was on the
+    # check_untyped_defs opt-out list, which is how an opt-out comes to hide a
+    # new fault instead of a known one (#60, #61).
+    counts: AuditCounts = {'removed': 0, 'reprocessed': 0, 'skipped': 0,
+                           'suspect': 0, 'checked': 0, 'failed': 0,
+                           'failures': []}
     suspect_paths = []
-    failures = []
+    failures: list[tuple[str, str]] = []
 
     def process_file_info(file_info):
         nonlocal processed_files_count
