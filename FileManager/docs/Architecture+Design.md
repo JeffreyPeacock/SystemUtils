@@ -484,3 +484,80 @@ packaging requirements — a `--version` carrying the build commit, and a timest
 header with the zone — are #54.
 
 **Related issues:** #52, #54, #57, #9
+
+---
+
+## An exit status says what happened, and "partly" is its own answer
+
+**Problem.** Three different outcomes were reaching callers as the same number.
+A scan that read the whole tree exited 0. A scan that could not read part of the
+tree also exited 0, having logged one `ERROR` line per unreadable file among
+thousands of per-file `INFO` lines on stderr, and recorded a database that is
+indistinguishable from a complete one. And `--help` — the first thing anyone
+runs — exited **2**, the code reserved for a rejected command line.
+
+The partial scan is the one with consequences past the process. The database
+holds no marker for a file that was skipped, so after the fact there is no way
+to tell a file that was absent from the tree from one that could not be opened.
+A later `audit-db` has nothing to report, and a duplicate report over the partial
+set is internally consistent. For a checksum baseline whose entire purpose is
+detecting later change, a silent gap reads as a file that never existed. The
+tool's output is a list of files a human may then delete, so this is not a
+reporting nicety.
+
+**Decision.** Four codes, each meaning one thing:
+
+| Exit | Meaning |
+|---|---|
+| 0 | completed, and read everything it was asked to read, or help was requested |
+| 1 | a required argument was missing or invalid |
+| 2 | `argparse` rejected the command line |
+| 3 | completed, but could not read part of the tree |
+
+`scan` and `audit-db` count hashed, skipped-unchanged and failed, and print the
+counts and each failed path.
+
+**3 is separate from 1 and 2 rather than folded into either.** 1 and 2 mean
+nothing was recorded at all, so there is nothing on disk to reason about. 3 means
+part of the tree was recorded and part was not, which is the only case where a
+caller has to decide what to do with a half-built database. Collapsing them would
+make the distinction unavailable precisely where it matters.
+
+**The counts go to stdout, not through `logging`.** Every log line in this
+project goes to stderr, and a scheduled scan suppresses the per-file noise with
+`2>/dev/null`. A summary written to the log stream would be discarded by exactly
+the runs that most need it. The counts are the result of the run, not a
+diagnostic about it.
+
+**The help flags are matched against `sys.argv` before parsing, not registered
+with argparse.** Two constraints have to hold together. The help text is
+`usage()`, which documents the actions, the options, the exit-code table and
+worked examples — argparse's generated help has none of that. And `action` is a
+required positional, so `--help` with nothing else would fail the
+missing-argument check before argparse ever looked at the flag. The positional
+`help` action is kept as well as the flags, because it is documented, it is in
+the `fm-*.sh` wrappers, and an external installer probes it.
+
+**Alternatives rejected.** Reusing exit 1 for a partial scan: it is the code for
+a bad command line, and conflating "you asked wrongly" with "I could not finish"
+is what this entry exists to undo. `add_help=True` alone: it would still have
+exited 2, because the `except SystemExit` around `parse_args` returned 2 for
+every code including 0 — that handler discarding its input is the underlying
+defect, the same shape as #23, and it has to be fixed for `--version` (#54) to
+work at all. Raising on the first unreadable file: a baseline scan of millions of
+files must not abandon the work that succeeded because one file was unreadable;
+the point is to record what can be recorded **and** report the gap.
+
+**What was retracted while building this.** A test asserting that `ScanTally`'s
+lock prevents lost increments passes with the lock removed: 32 threads, 50,000
+unsynchronised increments each, a 1 ns switch interval, zero lost, on CPython
+3.14.7 and on `/usr/bin/python3` 3.12.3. Both are GIL builds, so no test on
+either interpreter can distinguish the two versions. It was replaced by one that
+can fail — every file in a concurrent scan lands in exactly one bucket, verified
+against both a double-count and a dropped outcome. The lock stays, for a
+free-threaded build, held by reasoning rather than by a test, and the test module
+says so rather than implying otherwise. A detector that cannot fail is not a gate
+(`docs/Development-Principles.md` §3a), and the honest response is to label it,
+not to keep it as decoration.
+
+**Related issues:** #57, #58, #23, #54

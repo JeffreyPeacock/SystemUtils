@@ -309,10 +309,11 @@ a list in this file only goes stale. `/priority-review` renders it as a
 priority-ordered table in `FileManager/docs/ticket-priority-review.md` when you
 want it at a glance.
 
-Four silent-wrong-answer paths are fixed — #1 (prefix-anchored removal), #2
-(audit-db emptying an unmounted volume), #43 (`scan-dir-report` never returning)
-and #41 (an unreadable file reported as a duplicate). The coverage epic **#8**
-is closed, and the GUI tickets #3 and #11 closed with #51 when the GUI left.
+Five silent-wrong-answer paths are fixed — #1 (prefix-anchored removal), #2
+(audit-db emptying an unmounted volume), #43 (`scan-dir-report` never returning),
+#41 (an unreadable file reported as a duplicate) and #57 (a partial index
+reported as a complete one). The coverage epic **#8** is closed, the GUI tickets
+#3 and #11 closed with #51 when the GUI left, and #58 fixed `--help` exiting 2.
 
 **#50 is the one to read before trusting this database for integrity
 checking.** Neither `scan` nor `audit-db` can detect silent corruption: both
@@ -320,13 +321,6 @@ compare `(size, mtime)` and skip hashing when they match, so a rescan skips
 exactly the files whose contents were in question. Bit rot, a bad sector and a
 failing cable all rewrite bytes without touching size or mtime. The baseline
 scan is correct; nothing reads it back. Demonstrated on the ticket.
-
-**#57 is the gate on using this tool for an unattended baseline.** A scan that
-could not read part of the tree exits **0** with no failure count — measured at 1
-of 2 files recorded, exit 0, on a tree with one file at mode `000`. A partial index
-that reports success is the one failure here that cannot be found afterwards: the
-database looks identical whether a file was absent or merely unreadable. Same class
-as #41 and #2. It is requirement 11 of #54, split out as its own ticket.
 
 Also open: **#54** (the remaining zipapp requirements — `--version` with the
 embedded commit, which gates the Desktop-Ops installer; the timestamped header with
