@@ -5,6 +5,7 @@ import re
 import sqlite3
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Any
 
 from src.md5sum import compute_md5
 from src.utils import get_file_mtime_in_ms
@@ -456,8 +457,15 @@ def audit_db(db_path, num_threads, process_file, exclude_prefix=None,
     """
     batch_size = 100
     processed_files_count = 0
-    counts = {'removed': 0, 'reprocessed': 0, 'skipped': 0,
-              'suspect': 0, 'checked': 0, 'failed': 0}
+    # Annotated because 'failures' holds a list of (path, message) while every
+    # other key holds an int. mypy infers dict[str, int] from the literal and
+    # then rejects the list, and `src.db` is on the check_untyped_defs opt-out
+    # list in mypy.ini -- so without this the error is simply not reported, and
+    # the opt-out ends up hiding a new fault rather than a known one. A TypedDict
+    # is the better shape here and would let the dict stay homogeneous; that is a
+    # change to this function's contract and its three callers, not a drive-by.
+    counts: dict[str, Any] = {'removed': 0, 'reprocessed': 0, 'skipped': 0,
+                              'suspect': 0, 'checked': 0, 'failed': 0}
     suspect_paths = []
     failures = []
 
