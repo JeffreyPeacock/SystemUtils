@@ -94,10 +94,10 @@ rebuilds it in CI; its load-bearing assertion is that the archive holds no
 
 ## Testing
 
-**209 tests across 18 modules, all passing, no xfails.** Coverage is on by default
+**236 tests across 19 modules, all passing, no xfails.** Coverage is on by default
 via `pytest.ini` (`--cov=src --cov-branch`), writes `coverage.xml` and
 `test-results.xml`, and enforces `--cov-fail-under=99` against a measured
-**99.58%** combined line+branch coverage.
+**99.63%** combined line+branch coverage.
 
 Per-module figures live in `.coverage-summary.md`, regenerated every run and
 committed — read that rather than duplicating a table here that goes stale. As
@@ -263,6 +263,8 @@ rewritten the same day when #6 and #7 landed.
 - **`audit-db` keeps rows whose *directory* is also missing.** A deleted file leaves its parent directory behind; an unmounted volume does not. Rows in the second case are reported as `SUSPECT` and **not** removed, so a failed mount no longer empties a subtree (#2). The cost is that a directory you genuinely deleted also survives — `--prune-missing-dirs` removes those deliberately, and `--dry-run` shows either case first.
 - **`remove-record` is literal by default.** `--regex` opts into pattern matching, and the pattern must match the **whole** path (`re.fullmatch`). Deleting a subtree is therefore explicit: `'/a/b/.*'`. Before #1 the argument was always a prefix-anchored regex, so a literal `/a/b` also deleted `/a/bc`.
 - **An invalid invocation exits non-zero.** 1 for a missing or invalid argument, 2 for an argparse rejection, 0 for `help` (#23). Scripts under `set -e` therefore stop, which they did not before.
+- **An incomplete scan exits 3, and the counts are on stdout.** `scan` and `audit-db` print `scan complete: N hashed, N skipped unchanged, N failed` followed by each failed path, and return **3** if anything failed (#57). 3 is deliberately not 1 or 2: those mean nothing was recorded, while 3 means part of the tree was recorded and part was not. Before this, an unreadable file produced one ERROR line among the per-file log lines and **exit 0**, so a partial index was indistinguishable from a complete one — and it cannot be detected afterwards, because the database looks the same whether a file was absent or unreadable. A path on the command line that is neither a file nor a directory counts as a failure for the same reason. The summary goes to **stdout** while all logging goes to stderr, so it survives the `2>/dev/null` a scheduled scan uses.
+- **`--help` and `-h` do not work: they exit 2.** The help action is the positional `help`, which exits 0. `argparse` is built with `add_help=False` and the `except SystemExit` around `parse_args` returns 2 for every exit code including 0, so both halves have to change together. Filed; until then, anything probing the install must call `help`.
 
 ## Logging output
 

@@ -83,6 +83,37 @@ gitignored.
 target is found by `os.walk` and hashed like any other file, so the scan records
 its own database and the file changes under it as it goes.
 
+### What a run tells you, and its exit code
+
+`scan` and `audit-db` end with a summary on **stdout**:
+
+```
+scan complete: 4821 hashed, 1337903 skipped unchanged, 2 failed
+failed (2):
+  /home2/some/file: [Errno 13] Permission denied: '/home2/some/file'
+  /home2/other/file: [Errno 5] Input/output error
+```
+
+All the per-file logging goes to stderr, so the summary survives the
+`2>/dev/null` a scheduled scan uses to suppress it.
+
+| Exit | Meaning |
+|---|---|
+| 0 | the action completed and read everything it was asked to read |
+| 1 | a required argument was missing or invalid |
+| 2 | `argparse` rejected the command line |
+| 3 | it completed but **could not read part of the tree** |
+
+**3 is the one that matters for an unattended run.** Some files were recorded and
+some were not, and that gap cannot be found afterwards: the database looks the
+same whether a file was absent from the tree or merely unreadable. Until #57 this
+case exited **0**, so a partial index was indistinguishable from a complete one.
+A path given on the command line that is neither a file nor a directory counts as
+a failure for the same reason.
+
+**`--help` and `-h` currently exit 2, not 0.** The help action is the positional
+`help`. See the backlog.
+
 ### Running as root: build the bundle
 
 A whole-filesystem scan generally has to run as root, because a file the scanner
@@ -173,9 +204,9 @@ python -m mypy src/           # must be clean
 
 ### Testing
 
-209 tests in 18 modules, no xfails. `pytest.ini` enables branch coverage, writes
+236 tests in 19 modules, no xfails. `pytest.ini` enables branch coverage, writes
 `coverage.xml` and `test-results.xml`, and fails under **99%** — the current real
-measurement is 99.58%, which meets the 95% `docs/REQUIREMENTS.txt` has asked for
+measurement is 99.63%, which meets the 95% `docs/REQUIREMENTS.txt` has asked for
 since 2024. **Nothing is excluded from measurement**: `src/gui.py` was the only
 omission and it left with the GUI in #51, so `.coveragerc` has no `omit` key at
 all. The gap was closed by epic
@@ -217,10 +248,10 @@ Tracked on the [SystemUtils board](https://github.com/users/JeffreyPeacock/proje
 filtered by `component:file-manager`. The GUI tickets #3 and #11 closed with
 #51, when the GUI left this project for one of its own (#53).
 
-Two are worth reading before relying on this database to detect corruption:
+One is worth reading before relying on this database to detect corruption:
 
 - **#50** — neither `scan` nor `audit-db` can detect silent corruption. Both compare `(size, mtime)` and skip hashing when they match, so a rescan skips exactly the files whose contents were in question: bit rot, a bad sector and a failing cable all rewrite bytes without changing size or mtime. The baseline is recorded correctly; nothing reads it back.
-- **#57** — a scan that could not read part of the tree exits **0** and prints no count of what it missed. Measured: 1 of 2 files recorded, exit 0, on a tree with one file at mode `000`. Until this is fixed, exit 0 means the process finished, not that the tree was read.
+- **`--help` / `-h` exit 2 instead of printing help and exiting 0.** `argparse` is constructed with `add_help=False`, and the `except SystemExit` around `parse_args` returns 2 for every exit code including 0, so both halves have to change together. The positional `help` action works and exits 0.
 
 Four silent-wrong-answer paths are fixed: #1 and #2; #43, where
 `scan-dir-report` never returned at all until its shutdown was tested; and #41,

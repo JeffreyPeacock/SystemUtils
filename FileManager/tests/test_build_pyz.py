@@ -160,3 +160,75 @@ def test_the_build_output_is_not_committable():
         f"{targets} must be gitignored; git check-ignore reported: "
         f"{result.stdout}{result.stderr}"
     )
+
+
+def test_the_bundle_records_rows_and_reports_an_incomplete_scan(built, tmp_path):
+    """#57 through the artifact: row count and exit status asserted together.
+
+    The unit tests in `test_scan_failure_counts.py` run `src/main.py`. This runs
+    the thing that will actually be invoked under sudo, which is a different
+    program: a different interpreter (`/usr/bin/python3`, pinned by the
+    shebang), isolated mode, and imports resolved from inside the archive. A
+    scan that could not read part of the tree has to exit 3 there too, or the
+    unattended root scan this bundle exists for is back to reporting success
+    over a partial index.
+    """
+    import sqlite3
+    from contextlib import closing
+
+    tree = tmp_path / "tree"
+    tree.mkdir()
+    (tree / "readable.txt").write_text("readable\n", encoding="utf-8")
+    denied = tree / "denied.txt"
+    denied.write_text("denied\n", encoding="utf-8")
+    denied.chmod(0o000)
+    db = tmp_path / "bundle.db"
+
+    try:
+        result = subprocess.run(
+            [str(built), "--db-path", str(db), "scan", str(tree)],
+            cwd="/", capture_output=True, text=True, timeout=120,
+            env={**os.environ, "PYTHONPATH": "/nonexistent/should/not/matter"},
+        )
+    finally:
+        denied.chmod(0o644)
+
+    assert result.returncode == 3, (
+        f"the bundle exited {result.returncode} on a tree it could not fully "
+        f"read\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+    )
+    # `with sqlite3.connect(...)` commits but does not close the handle.
+    with closing(sqlite3.connect(db)) as conn:
+        rows = [r[0] for r in conn.execute("SELECT path FROM files")]
+    assert rows == [str(tree / "readable.txt")], (
+        "the readable file must still be recorded -- a non-zero exit does not "
+        "mean discarding the work that succeeded"
+    )
+    assert "1 hashed, 0 skipped unchanged, 1 failed" in result.stdout
+    assert str(denied) in result.stdout
+
+
+def test_the_bundle_exits_zero_on_a_tree_it_could_read(built, tmp_path):
+    """The other half: an exit code that is always non-zero carries nothing."""
+    import sqlite3
+    from contextlib import closing
+
+    tree = tmp_path / "clean"
+    tree.mkdir()
+    (tree / "a.txt").write_text("a\n", encoding="utf-8")
+    (tree / "b.txt").write_text("b\n", encoding="utf-8")
+    db = tmp_path / "clean.db"
+
+    result = subprocess.run(
+        [str(built), "--db-path", str(db), "scan", str(tree)],
+        cwd="/", capture_output=True, text=True, timeout=120,
+        env={**os.environ, "PYTHONPATH": "/nonexistent/should/not/matter"},
+    )
+
+    assert result.returncode == 0, (
+        f"exit {result.returncode}\nstdout:\n{result.stdout}\n"
+        f"stderr:\n{result.stderr}"
+    )
+    assert "2 hashed, 0 skipped unchanged, 0 failed" in result.stdout
+    with closing(sqlite3.connect(db)) as conn:
+        assert conn.execute("SELECT count(*) FROM files").fetchone()[0] == 2
