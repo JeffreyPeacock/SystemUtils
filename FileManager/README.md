@@ -289,8 +289,15 @@ one means adding it to the other.
 
 Tracked on the [SystemUtils board](https://github.com/users/JeffreyPeacock/projects/14),
 filtered by `component:file-manager`. The GUI tickets #3 and #11 closed with
-#51, when the GUI left this project for one of its own (#53) — which is the only
-FileManager ticket still open.
+#51, when the GUI left this project for one of its own (#53).
+
+Worth reading before running a baseline scan of a multi-million-file tree.
+None of these blocks such a run; all three were found while checking whether one
+was ready:
+
+- **#67** — `scan`'s producer queue is unbounded. The producer walks metadata while the consumers hash, so on a first pass the walk gets ahead and the queue grows to roughly the full file count: ~122 bytes per path, so ~0.63 GiB for 5.58M files. Memory scales with the tree, not with the work.
+- **#68** — `verify-db` loads every recorded row before hashing anything: ~253 bytes per row. Use `--prefix` to bound a run until that is fixed.
+- **#69** — the database's parent directory must exist. Without it the run dies with a traceback and exits 1, which this tool's contract defines as an invalid argument.
 
 Six silent-wrong-answer paths are fixed: #1 and #2; #43, where
 `scan-dir-report` never returned at all until its shutdown was tested; #41,
