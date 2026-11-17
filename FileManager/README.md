@@ -113,6 +113,24 @@ a failure for the same reason.
 
 `-h`, `--help`, `-?` and the positional `help` all print the help and exit 0.
 
+`--version` prints what the code was built from and exits 0:
+
+```
+FileManager
+commit : 92eb5f6dc6f51fa6eaf0a7732862c15af836dc27
+built  : 2026-11-17 13:10:29 MST
+tree   : clean
+source : zipapp bundle
+```
+
+A **source checkout** says `not a build -- source checkout` and reads git live
+instead; a question git cannot answer prints `CANNOT DETERMINE` rather than a
+placeholder, because an un-rebuilt bundle and a source run must not look alike.
+`scripts/build-pyz.sh` **refuses to build while anything under `FileManager/` is
+uncommitted** — a bundle built from uncommitted edits would name a commit that
+does not contain the code inside it. `FM_ALLOW_DIRTY=1` overrides, and the
+artifact then reports `dirty at build time` for as long as it exists (#62).
+
 ### Running as root: build the bundle
 
 A whole-filesystem scan generally has to run as root, because a file the scanner
@@ -121,12 +139,12 @@ cannot read contributes nothing to the database. `sudo python src/main.py` does
 from the pyenv shim, so it silently runs a different interpreter or none at all.
 
 ```sh
-scripts/build-pyz.sh      # -> dist/FileManager.pyz, about 56K
+scripts/build-pyz.sh      # -> dist/FileManager.pyz, about 68K
 sudo ./dist/FileManager.pyz --threads 8 --db-path /var/lib/filemanager/home2.db scan /home2
 ```
 
 `scripts/build-pyz.sh` uses `python -m zipapp` from the standard library and
-pins `/usr/bin/env python3` as the archive's shebang, which is the whole point —
+pins `/usr/bin/python3 -I` as the archive's shebang, which is the whole point —
 the bundle stops depending on the caller's `PATH` and on pyenv existing. There
 are no runtime dependencies to vendor, so nothing heavier is needed; the script
 verifies the result by *running* it, and `tests/test_build_pyz.py` builds it in
@@ -196,16 +214,16 @@ Python 3.14.7 via the `sys-utils` pyenv-virtualenv, then
 `pip install -r requirements-dev.txt`.
 
 ```bash
-python -m pytest              # 264 tests; coverage on, floor enforced
+python -m pytest              # 295 tests; coverage on, floor enforced
 python -m pytest --no-cov -q  # faster while iterating
 python -m mypy src/           # must be clean
 ```
 
 ### Testing
 
-264 tests in 20 modules, no xfails. `pytest.ini` enables branch coverage, writes
+295 tests in 22 modules, no xfails. `pytest.ini` enables branch coverage, writes
 `coverage.xml` and `test-results.xml`, and fails under **99%** — the current real
-measurement is 99.64%, which meets the 95% `docs/REQUIREMENTS.txt` has asked for
+measurement is 99.66%, which meets the 95% `docs/REQUIREMENTS.txt` has asked for
 since 2024. **Nothing is excluded from measurement**: `src/gui.py` was the only
 omission and it left with the GUI in #51, so `.coveragerc` has no `omit` key at
 all. The gap was closed by epic
@@ -253,7 +271,8 @@ filtered by `component:file-manager`. The GUI tickets #3 and #11 closed with
 Worth reading before relying on this database to detect corruption:
 
 - **#50** — neither `scan` nor `audit-db` can detect silent corruption. Both compare `(size, mtime)` and skip hashing when they match, so a rescan skips exactly the files whose contents were in question: bit rot, a bad sector and a failing cable all rewrite bytes without changing size or mtime. The baseline is recorded correctly; nothing reads it back.
-- **#54** — the remaining packaging work for the single-file bundle: `--version` carrying the build commit, a timestamped header with the zone, and the rest of the artifact test.
+- **#54** — what is left of the packaging spec: a timestamped header with the zone, and the rest of the artifact test. `--version` carrying the build commit was split out as #62 and has landed, which clears the Desktop-Ops installer's gate.
+- **#60** — `audit_db` returns a dict typed `dict[str, Any]`; a `TypedDict` would type every field and let `src/main.py` be checked against it.
 
 Four silent-wrong-answer paths are fixed: #1 and #2; #43, where
 `scan-dir-report` never returned at all until its shutdown was tested; and #41,

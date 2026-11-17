@@ -561,3 +561,64 @@ says so rather than implying otherwise. A detector that cannot fail is not a gat
 not to keep it as decoration.
 
 **Related issues:** #57, #58, #23, #54
+
+---
+
+## A build records what it was built from, and refuses to guess
+
+An installed bundle is one file, root-owned, outside any checkout. Asked "which
+code is this?", it has nothing to consult: no git repository, no source tree, and
+not even a usable checksum — zip entries carry file mtimes, so two builds of the
+same commit differ byte for byte. A hash of the `.pyz` identifies a *build*, not
+a revision. Yet the question has to be answerable, because the thing produces a
+list of files a human may then delete, and a 20-hour unattended scan that gave a
+wrong answer has to be traceable to the code that produced it. The consumer's
+installer refuses to install an artifact that cannot say.
+
+**The decision: embed the values at build time, into the copy being archived.**
+`scripts/stamp_build_info.py` writes `src/build_info.py` into `build/pyz/src/`
+after `build-pyz.sh` copies the source and before `zipapp` runs. The committed
+`src/build_info.py` holds `None` for every field, and **that `None` is the
+signal** — `--version` reads it to mean "not a bundle", falls back to asking git
+about the working checkout, and labels the answer as a source run.
+
+`None` rather than an empty string, a placeholder, or a row of zeros, because a
+zero hash is a *value*: it gets printed, compared, and believed. The same
+reasoning produced `UniquenessUnknown` in `db.py` (#41) — "could not determine"
+must not be expressible as an answer that looks like one.
+
+**Alternatives rejected.** Asking git at run time fails for the only case that
+matters, an installed artifact with no repository near it. Writing the stamp into
+the committed `src/` would leave the checkout permanently dirty or the file
+permanently gitignored, and a gitignored source module is one more thing that
+exists in a build and not in a test run. Putting the formatting inside
+`build_info.py` would put logic in a file the build overwrites, so it would exist
+in two versions that drift — hence the split into `version.py` (logic, committed)
+and `build_info.py` (data, replaced).
+
+**The build refuses a dirty tree**, because a bundle built from uncommitted edits
+names a commit that does not contain the code inside it. That is worse than an
+unknown answer: it is confidently wrong, and nothing downstream can detect it.
+`FM_ALLOW_DIRTY=1` is the deliberate escape and costs the artifact its clean
+claim for as long as it exists. The check is scoped to `FileManager/` rather than
+the whole repository — a repo-root README edit refusing a build would train
+people to pass the override by reflex, which is how a safety check becomes
+decoration.
+
+A git question that **cannot be asked** is a third outcome, not a clean tree:
+`git status --porcelain` prints nothing for a clean tree *and* nothing when it
+cannot read the repository, so emptiness proves nothing on its own. Both the
+stamper and `--version` distinguish the three.
+
+**A note on testing it.** Three refusals were written and each was broken in turn
+to see which test failed. Two fired. The third — "git could not tell me the tree
+state" — broke nothing, because when git cannot be consulted at all `rev-parse
+HEAD` fails first and the stamper returns before it ever asks about the tree. The
+branch was real and reachable in principle, and unreachable by every test
+written for it. An unreadable `.git/index` separates the two calls (`rev-parse`
+reads refs and answers; `git status` opens the index and exits 128), which is now
+the test that covers it. Recorded because the lesson is not "write a test" but
+**"check that the test can fail"**, and this is the third time in this repository
+that checking found one that could not (§3a, and #57's lock test).
+
+**Related issues:** #62, #54, #52, #58, #41

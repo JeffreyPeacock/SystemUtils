@@ -24,7 +24,7 @@ below worth reading before changing anything.
 graphical user-interface" requirement is **not met here, and will not be**: the
 GUI left this project in #51 and becomes a separate application (#53). This is
 a headless CLI scanner — no Tk, no display, no optional GUI flag. The 95%
-coverage requirement is **met**, at 99.58%; epic #8 and its children #32-#36
+coverage requirement is **met**, at 99.66%; epic #8 and its children #32-#36
 and #45 are closed.
 
 ## Tech Stack
@@ -76,15 +76,17 @@ python -m pytest --no-cov -q                                # skip the floor whi
 python -m mypy src/
 
 # Bundle as one executable, for running as root
-scripts/build-pyz.sh     # -> dist/FileManager.pyz (~56K); optional arg overrides
+scripts/build-pyz.sh     # -> dist/FileManager.pyz (~68K); optional arg overrides
+FM_ALLOW_DIRTY=1 scripts/build-pyz.sh    # build anyway; artifact says "dirty at build time"
+./dist/FileManager.pyz --version         # the commit it was built from
 sudo ./dist/FileManager.pyz --threads 8 --db-path /var/lib/filemanager/home2.db scan /home2
 ```
 
 **`sudo python src/main.py` runs the wrong interpreter.** `sudo` resolves
 `python` from *root's* PATH, not the pyenv shim, so it silently picks a
 different interpreter or none. `scripts/build-pyz.sh` solves exactly that by
-pinning `/usr/bin/env python3` into a `zipapp` archive — stdlib only, no
-vendoring, 56K (#52). It verifies the artifact by **running** it from `/`,
+pinning `/usr/bin/python3 -I` into a `zipapp` archive — stdlib only, no
+vendoring, 68K (#52). It verifies the artifact by **running** it from `/`,
 because a zipapp can be written successfully and still be unrunnable, and
 running it from inside this directory would let `src.` imports resolve from the
 working directory rather than from the archive. `tests/test_build_pyz.py`
@@ -94,10 +96,10 @@ rebuilds it in CI; its load-bearing assertion is that the archive holds no
 
 ## Testing
 
-**264 tests across 20 modules, all passing, no xfails.** Coverage is on by default
+**295 tests across 22 modules, all passing, no xfails.** Coverage is on by default
 via `pytest.ini` (`--cov=src --cov-branch`), writes `coverage.xml` and
 `test-results.xml`, and enforces `--cov-fail-under=99` against a measured
-**99.64%** combined line+branch coverage.
+**99.66%** combined line+branch coverage.
 
 Per-module figures live in `.coverage-summary.md`, regenerated every run and
 committed — read that rather than duplicating a table here that goes stale. As
@@ -198,6 +200,7 @@ beyond argument validation. Below it is a flat module layer, no classes:
 - `src/db.py` — the only module that calls `sqlite3.connect`. Owns the schema, every query, and the lock-retry behaviour, all through one gateway: `with_connection(db_path, work, commit=...)`. Also owns `UniquenessUnknown`, raised when a file's uniqueness cannot be determined — never answered as `False`, which is a verdict (#41).
 - `src/file_ops.py` — directory walking and the decision of whether a file needs hashing. `process_file` is the core routine.
 - `src/reporting.py` — formats and prints; every query it runs is a `db.py` function (#10). It must not import `sqlite3`, and `tests/test_db_owns_the_connection.py` fails if it does.
+- `src/version.py`, `src/build_info.py` — what `--version` prints. `build_info.py` is **data only**, because the build overwrites it; every line of logic and the live-git fallback are in `version.py` (#62).
 - `src/md5sum.py`, `src/utils.py` — `compute_md5` (4 KB chunks), `get_file_mtime_in_ms`,
   and `report_settings`, which prints each setting's name, value and origin before a
   destructive run and refuses a credential-shaped name outright
@@ -272,7 +275,8 @@ rewritten the same day when #6 and #7 landed.
 - **`remove-record` is literal by default.** `--regex` opts into pattern matching, and the pattern must match the **whole** path (`re.fullmatch`). Deleting a subtree is therefore explicit: `'/a/b/.*'`. Before #1 the argument was always a prefix-anchored regex, so a literal `/a/b` also deleted `/a/bc`.
 - **An invalid invocation exits non-zero.** 1 for a missing or invalid argument, 2 for an argparse rejection, 0 for `help` (#23). Scripts under `set -e` therefore stop, which they did not before.
 - **An incomplete scan exits 3, and the counts are on stdout.** `scan` and `audit-db` print `scan complete: N hashed, N skipped unchanged, N failed` followed by each failed path, and return **3** if anything failed (#57). 3 is deliberately not 1 or 2: those mean nothing was recorded, while 3 means part of the tree was recorded and part was not. Before this, an unreadable file produced one ERROR line among the per-file log lines and **exit 0**, so a partial index was indistinguishable from a complete one — and it cannot be detected afterwards, because the database looks the same whether a file was absent or unreadable. A path on the command line that is neither a file nor a directory counts as a failure for the same reason. The summary goes to **stdout** while all logging goes to stderr, so it survives the `2>/dev/null` a scheduled scan uses.
-- **Help is intercepted before argparse, on purpose.** `-h`, `--help`, `-?` and the positional `help` all print `usage()` and exit 0 (#58). The flags are matched against `sys.argv` rather than registered with the parser, because the help text is `usage()` — which documents the actions, options, exit codes and examples that argparse's generated help does not — and because `action` is a required positional, so `--help` alone would otherwise fail the missing-argument check first. All four exited 0 only as of #58: `add_help=False` had removed the flags from the parser, and the `except SystemExit` around `parse_args` returned 2 for every exit code including 0. Both had to change together, and the second matters again for `--version` (#54), which will raise `SystemExit(0)` through that same handler.
+- **`--version` is embedded at build time, and a dirty tree refuses to build.** The archive has no git repository at run time, so `scripts/stamp_build_info.py` writes `src/build_info.py` into the copy `build-pyz.sh` archives (#62). The **committed** copy holds `None` for every field, and that `None` is how `--version` knows it is not a bundle: a source checkout says `not a build -- source checkout` and reads git live. A question git cannot answer prints `CANNOT DETERMINE`, never `clean`. Two consequences that will catch you out: **`scripts/build-pyz.sh` refuses to run while anything under `FileManager/` is uncommitted** — `FM_ALLOW_DIRTY=1` overrides and the artifact then reports `dirty at build time` permanently — and `tests/test_build_pyz.py` therefore sets that variable in its fixtures, because a developer's tree is normally dirty and the module asserts on the archive, not on the checkout. The refusal itself is tested against throwaway repositories in `tests/test_stamp_build_info.py`, so opting out of it in one place does not leave it untested.
+- **Help is intercepted before argparse, on purpose.** `-h`, `--help`, `-?` and the positional `help` all print `usage()` and exit 0 (#58). The flags are matched against `sys.argv` rather than registered with the parser, because the help text is `usage()` — which documents the actions, options, exit codes and examples that argparse's generated help does not — and because `action` is a required positional, so `--help` alone would otherwise fail the missing-argument check first. All four exited 0 only as of #58: `add_help=False` had removed the flags from the parser, and the `except SystemExit` around `parse_args` returned 2 for every exit code including 0. Both had to change together. The `exc.code` fix stands on its own; `--version` ended up **not** using it (#62) — it is matched against `sys.argv` in the same place and for the same reasons as the help flags, rather than registered as argparse's `action='version'`, because two mechanisms answering two conventional flags in two places is one more thing to keep true.
 
 ## Logging output
 
@@ -330,8 +334,9 @@ exactly the files whose contents were in question. Bit rot, a bad sector and a
 failing cable all rewrite bytes without touching size or mtime. The baseline
 scan is correct; nothing reads it back. Demonstrated on the ticket.
 
-Also open: **#54** (the remaining zipapp requirements — `--version` with the
-embedded commit, which gates the Desktop-Ops installer; the timestamped header with
-the zone; the rest of the artifact test) and **#53** (the GUI as its own
-application, carrying the decision from #11 and the path-handling bug from #3).
-The bundle itself shipped in #52.
+Also open: **#54** (what is left of the zipapp spec: the timestamped header with
+the zone, and the rest of the artifact test — requirement 9 split out as #62 and
+landed, so the Desktop-Ops installer's gate is cleared), **#60** (a `TypedDict`
+for `audit_db`'s counts) and **#53** (the GUI as its own application, carrying
+the decision from #11 and the path-handling bug from #3). The bundle itself
+shipped in #52, and `--version` in #62.
