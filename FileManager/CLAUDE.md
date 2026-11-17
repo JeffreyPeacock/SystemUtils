@@ -136,8 +136,16 @@ list by **passing** `check_untyped_defs`, never by the defaults being loosened.
 `gui` and `main` left it in #36 without needing annotation at all — the stanzas
 had been guarding nothing, which is worth re-testing occasionally rather than
 assuming. (`gui` has since left the project altogether with the GUI, #51, so
-mypy now checks 7 files.) The three that remain each fail on one container
-literal, named in `mypy.ini`. Reasoning in repo-root `docs/Development-Principles.md` §4.
+mypy now checks 7 files.) The three that remain fail on four container literals
+between them, named in `mypy.ini`: two in `db`, one each in `file_ops` and
+`reporting`.
+
+**Re-run mypy with the stanzas stripped when checking the ratchets, and compare
+the per-module counts against what `mypy.ini` says it covers.** An exempt module
+absorbs a *new* error without `python -m mypy src/` noticing: #57 added
+`counts['failures']` to a dict inferred as `dict[str, int]`, taking `src/db.py`
+to 3 errors against the 2 documented, and the suite stayed green. #61 annotated
+it back. Reasoning in repo-root `docs/Development-Principles.md` §4.
 
 Every run writes **`.coverage-summary.md`**, and it is **committed**: overall line and
 branch tables, a per-file breakdown with 🟢/🟡/🔴 badges, and the test counts.

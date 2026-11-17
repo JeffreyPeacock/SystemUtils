@@ -196,7 +196,7 @@ Python 3.14.7 via the `sys-utils` pyenv-virtualenv, then
 `pip install -r requirements-dev.txt`.
 
 ```bash
-python -m pytest              # 201 tests; coverage on, floor enforced
+python -m pytest              # 264 tests; coverage on, floor enforced
 python -m pytest --no-cov -q  # faster while iterating
 python -m mypy src/           # must be clean
 ```
@@ -228,8 +228,11 @@ anything.
 The floor **only moves up** — raise it in the same PR that raises real coverage.
 Same for the per-module opt-outs in `mypy.ini`: a module leaves the list by
 passing `check_untyped_defs`, not by loosening the defaults. `gui` and `main`
-left it in #36 (and `gui` has since left the project entirely); `db`,
-`file_ops` and `reporting` each need one annotation, named in `mypy.ini`. See
+left it in #36 (and `gui` has since left the project entirely). The three that
+remain need four annotations between them — two in `db`, one each in `file_ops`
+and `reporting` — named in `mypy.ini`. Check that list by running mypy with the
+stanzas removed: an exempt module can absorb a new error silently, which is what
+#61 corrected. See
 [Development-Principles §4](../docs/Development-Principles.md).
 
 ### Fixtures

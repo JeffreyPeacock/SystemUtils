@@ -128,7 +128,8 @@ stanza in the same PR. Neither value is ever lowered to make a red build green.
 1. **A floor that can be lowered measures nothing.** If the response to a failing gate is to move the
    gate, the gate has no information content — it only records the last time someone was in a hurry.
 2. **The ratchet is what converts intent into progress.** `FileManager/docs/REQUIREMENTS.txt` has asked for 95%
-   coverage since 2024 and the code sits at 29.81%. An aspiration in a document changes nothing; a
+   coverage since 2024 and the code sat at 29.81% when this was written. An aspiration in a
+   document changes nothing; a
    number that cannot go down turns each PR into a small, permanent gain.
 3. **It makes the gap honest.** A floor set at the real measurement states the distance to the goal
    out loud, every run. A floor set at the goal fails constantly, gets ignored, and then gets deleted.
@@ -142,4 +143,20 @@ saying which change did it and why.
 
 **Example in this repo:** the floor was set to 29 against a measured 29.81% rather than to the 95%
 that `FileManager/docs/REQUIREMENTS.txt` demands. 95% would have failed on the first run and been switched off
-within a week; 29 fails the moment anything regresses, and every test written from here moves it up.
+within a week; 29 fails the moment anything regresses, and every test written from here moves it up. It
+reached 99 that way.
+
+**An exemption list grows unless something checks it.** `mypy.ini`'s opt-out stanzas say in a comment
+which container literals they cover, but nothing enforces that list. A later change can add a *new*
+error to an exempt module and `python -m mypy src/` still reports success — so the exemption quietly
+covers more than it documents, and the module moves **away** from graduating rather than toward it.
+#57 did exactly that: it added a `counts['failures']` list to a dict mypy had inferred as
+`dict[str, int]`, and the error was invisible because `src.db` is exempt. It surfaced only when the
+stanzas were stripped and the errors counted per module — 3 in `src/db.py` against the 2 the file
+documents — and was fixed in #61.
+
+So when checking the ratchets after a merge, re-run mypy with the stanzas removed and compare the
+per-module counts against what `mypy.ini` claims. This is §3a applied to an exemption: a gate that
+reports success no matter what the exempt module does is not telling you the exemption is still the
+size you agreed to. The check has now paid twice — #36 found two stanzas guarding nothing at all,
+#61 found one guarding more than it said.
