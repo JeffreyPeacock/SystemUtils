@@ -153,6 +153,41 @@ def get_all_files_info(db_path):
         description="read all file info",
     )
 
+def recorded_checksums(db_path, prefix=None):
+    """Every (path, md5sum) the database holds, optionally under one prefix.
+
+    The read side of #50. `audit_db` and `scan` both decide what to do from
+    (size, mtime) and never look at the stored checksum, so this is the only
+    query that returns it in bulk -- verifying it is the one job a stored
+    checksum exists for.
+
+    Ordered by path so a prefix-scoped run covers a predictable subtree and two
+    runs over the same prefix report in the same order, which matters when the
+    output is diffed between runs.
+
+    Args:
+        db_path (str): The path to the database file.
+        prefix (str, optional): Only rows whose path starts with this. The
+            database may hold millions of rows across several volumes, and
+            verifying all of them takes hours (#50).
+
+    Returns:
+        list: (path, md5sum) tuples, ordered by path.
+    """
+    if prefix:
+        return _read_all(
+            db_path,
+            "SELECT path, md5sum FROM files WHERE path LIKE ? ORDER BY path",
+            (f"{prefix}%",),
+            description="read recorded checksums under a prefix",
+        )
+    return _read_all(
+        db_path,
+        "SELECT path, md5sum FROM files ORDER BY path",
+        description="read recorded checksums",
+    )
+
+
 def store_file_info(db_path, path, md5sum):
     """
     Store or update the information of a file in the database.

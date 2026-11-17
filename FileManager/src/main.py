@@ -14,7 +14,9 @@ from src.db import (
     initialize_db, audit_db, get_file_info, get_md5_by_path,
     scan_and_report_unique_files, remove_record_by_path, remove_records_by_regex,
 )
-from src.file_ops import scan, check_file, process_file, ScanTally
+from src.file_ops import (
+    scan, check_file, process_file, ScanTally, verify_db,
+)
 from src.reporting import (
     scan_dir_report, report_duplicates, report_duplicate_sizes,
     report_prefix_count, compare_directories,
@@ -53,6 +55,13 @@ def usage():
         audit-db            Re-verify every recorded path. Drops rows for files
                             that no longer exist and rehashes those that changed.
                             Use --dry-run first: this action deletes rows.
+        verify-db           Rehash recorded files and compare against the STORED
+                            checksum, reporting every mismatch. This is the only
+                            action that can detect silent corruption: scan and
+                            audit-db both skip on (size, mtime), which is
+                            unchanged by bit rot. Never writes to the database.
+                            Scope a long run with --prefix. Exits 4 on a
+                            mismatch.
         report-duplicate-sizes Report the total size of duplicate files.
         report-prefix-count Report the number of files that match a given prefix.
         remove-record       Remove the record for exactly the specified path.
@@ -69,9 +78,14 @@ def usage():
                             to, or help was requested
         1                   a required argument was missing or invalid
         2                   argparse rejected the command line
-        3                   scan or audit-db completed but could not read part of
-                            the tree. Some files were recorded and some were not;
-                            the counts and the failed paths are on stdout.
+        3                   scan, audit-db or verify-db completed but could not
+                            read part of what it was asked to read. Some files
+                            were recorded or checked and some were not; the
+                            counts and the failed paths are on stdout.
+        4                   verify-db found a recorded file whose contents no
+                            longer match its stored checksum. Not 3: 3 means
+                            part of the answer is unknown, 4 means the answer is
+                            known and bad.
 
     Options:
         --version           Print the commit this code was built from, the
@@ -84,7 +98,9 @@ def usage():
         --db-path           Path to the database file or directory.
         --threads           Number of threads to use for concurrent operations.
         --prefix            Prefix to match files (required for
-                            report-prefix-count action).
+                            report-prefix-count action). For verify-db it scopes
+                            the run to recorded paths under that prefix --
+                            verifying millions of files takes hours.
         --dirA              Path to the first directory for comparison (required for
                             compare-directories action).
         --dirB              Path to the second directory for comparison (required for
@@ -106,6 +122,8 @@ def usage():
         python main.py check-file /path/to/file --db-path /path/to/db --threads 4
         python main.py scan-dir-report /path/to/dir --db-path /path/to/db --threads 4
         python main.py audit-db --db-path /path/to/db --threads 4 --dry-run
+        python main.py verify-db --db-path /path/to/db --threads 8
+        python main.py verify-db --db-path /path/to/db --prefix /mnt/backup
         python main.py audit-db --db-path /path/to/db --threads 4 --exclude-prefix /exclude/path1,/exclude/path2
         python main.py report-duplicate-sizes --db-path /path/to/db
         python main.py report-prefix-count --db-path /path/to/db --prefix <prefix>
@@ -186,6 +204,13 @@ VERSION_FLAGS = ('--version',)
 # which mean nothing was recorded at all. See main()'s docstring and #57.
 EXIT_INCOMPLETE = 3
 
+# verify-db found a recorded file whose contents no longer match the stored
+# checksum. Deliberately NOT 3: 3 means part of the answer is unknown, while
+# this means the answer is known and bad. Conflating "could not check" with
+# "checked and found corruption" is the mistake this whole area of the code
+# keeps being fixed for (#50, and #41 before it).
+EXIT_MISMATCH = 4
+
 
 def _print_run_header(action, paths, db_path, threads):
     """Print what this run is, before it does anything (#54 requirement 10).
@@ -223,6 +248,13 @@ def _print_run_header(action, paths, db_path, threads):
     for label, value in fields:
         print(f'{label.ljust(width)} : {value}')
     print()
+
+
+def _print_verify_summary(tally):
+    """The verify report, on stdout beside the other run results (#50)."""
+    print()
+    for line in tally.summary_lines():
+        print(line)
 
 
 def _print_scan_summary(tally):
@@ -273,6 +305,11 @@ def main():
             command line, which recorded nothing, from a scan that recorded most
             of a tree and skipped the rest. Both are failures; only one leaves a
             partial index behind (#57).
+
+            4 is verify-db finding a stored checksum that no longer matches the
+            file (#50), and it is separate from 3 for the same kind of reason:
+            3 says part of the answer is unknown, 4 says the answer is known and
+            bad. A mismatch outranks an unreadable file when both happen.
     """
     parser = argparse.ArgumentParser(
         description='File Manager Application', add_help=False
@@ -281,7 +318,8 @@ def main():
         'action',
         choices=[
             'scan', 'check-file', 'scan-dir-report', 'report-duplicates',
-            'audit-db', 'report-duplicate-sizes', 'report-prefix-count',
+            'audit-db', 'verify-db',
+            'report-duplicate-sizes', 'report-prefix-count',
             'report-files-for-prefix',
             'remove-record', 'compare-directories', 'get-file-info',
             'scan-unique-files', 'help'
@@ -430,6 +468,22 @@ def main():
                            prune_missing_dirs=args.prune_missing_dirs)
         _print_audit_summary(counts)
         if counts['failed']:
+            return EXIT_INCOMPLETE
+    elif args.action == 'verify-db':
+        report_settings('verify-db', [
+            ('db_path', db_path, _origin('--db-path')),
+            ('threads', args.threads, _origin('--threads')),
+            ('prefix', args.prefix or '(every recorded path)',
+             _origin('--prefix')),
+        ])
+        tally = verify_db(db_path, args.threads, args.prefix)
+        _print_verify_summary(tally)
+        # A mismatch outranks an unreadable file. Both are failures, but one
+        # is a definite wrong answer already in the database and the other is
+        # a gap still to be checked.
+        if tally.mismatched:
+            return EXIT_MISMATCH
+        if tally.unreadable:
             return EXIT_INCOMPLETE
     elif args.action == 'report-duplicate-sizes':
         report_duplicate_sizes(db_path)
