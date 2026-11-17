@@ -14,8 +14,10 @@ That has already produced a wrong answer in this repository.
 
 from __future__ import annotations
 
+import contextlib
 import os
 import re
+import sqlite3
 import subprocess
 import zipfile
 from pathlib import Path
@@ -313,3 +315,131 @@ def test_the_bundle_reports_the_tree_state_it_was_built_from(built, tmp_path):
     assert len(tree_lines) == 1, result.stdout
     value = tree_lines[0].split(":", 1)[1].strip()
     assert value in ("clean", "dirty at build time") or "CANNOT" in value, value
+
+
+def test_the_bundle_prints_the_run_header(built, tmp_path):
+    """#54 requirement 10, measured on the artifact.
+
+    The header is the only record of what an unattended run was configured to
+    do, and it has to survive `2>/dev/null`, so it is read from stdout here
+    while stderr is captured separately and checked not to carry it.
+    """
+    tree = tmp_path / "tree"
+    tree.mkdir()
+    (tree / "a.txt").write_text("a")
+    result = subprocess.run(
+        [str(built), "--db-path", str(tmp_path / "db.db"), "--threads", "3",
+         "scan", str(tree)],
+        capture_output=True, text=True, timeout=120, cwd=str(tmp_path),
+        env={**os.environ, "PYTHONPATH": "/nonexistent/should/not/matter"},
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.splitlines()[0] == "FileManager run"
+    assert re.search(
+        r"^started +: \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} [A-Z]{2,5}$",
+        result.stdout, re.M,
+    ), result.stdout
+    assert "threads : 3" in result.stdout
+    assert "FileManager run" not in result.stderr
+    # A bundle must report itself as one here too, not as a source checkout.
+    assert "bundle" in result.stdout
+
+
+def test_the_bundle_answers_the_consumers_whole_acceptance_sequence(
+    built, tmp_path
+):
+    """#54 requirement 12, in the order and the conditions it specifies.
+
+    Build the archive, then from a working directory outside the repository
+    with PYTHONPATH pointing at junk, run `--version`, `--help` and a `scan` of
+    `test_data` into a temporary database; assert the exit codes and the rows.
+
+    The individual behaviours have their own tests above. This one exists
+    because the consumer runs them as a sequence against one artifact, and a
+    requirement written as a sequence is worth checking as one.
+
+    The expected row count is computed from the fixture rather than written
+    down: a hard-coded number would silently stop matching the day a file is
+    added to `test_data/data`, and `assert expected` fails loudly if the
+    fixture is ever empty -- an empty expectation would make every assertion
+    below pass without testing anything.
+    """
+    env = {**os.environ, "PYTHONPATH": "/nonexistent/should/not/matter"}
+    fixture = PROJECT / "test_data" / "data"
+    db = tmp_path / "acceptance.db"
+
+    def bundle(*args):
+        return subprocess.run(
+            [str(built), *args], capture_output=True, text=True,
+            timeout=300, cwd=str(tmp_path), env=env,
+        )
+
+    version_run = bundle("--version")
+    assert version_run.returncode == 0, version_run.stderr
+    assert re.search(r"^commit +: +[0-9a-f]{40}$", version_run.stdout, re.M)
+
+    help_run = bundle("--help")
+    assert help_run.returncode == 0, help_run.stderr
+    assert "File Manager Application" in help_run.stdout
+
+    expected = sorted(
+        str(p) for p in fixture.rglob("*") if p.is_file()
+    )
+    assert expected, f"{fixture} holds no files; the assertion would be empty"
+
+    scan_run = bundle("--db-path", str(db), "--threads", "4",
+                      "scan", str(fixture))
+    assert scan_run.returncode == 0, (
+        f"exit {scan_run.returncode}\nstdout:\n{scan_run.stdout}\n"
+        f"stderr:\n{scan_run.stderr}"
+    )
+
+    assert db.is_file(), "the scan recorded nothing at all"
+    with contextlib.closing(sqlite3.connect(db)) as conn:
+        recorded = sorted(row[0] for row in
+                          conn.execute("SELECT path FROM files"))
+    assert recorded == expected, (
+        f"{len(recorded)} rows recorded, {len(expected)} files in the fixture"
+    )
+
+    # Every row carries a checksum: a row with a NULL md5 is a recorded file
+    # that was never actually hashed, which is the failure #57 was about.
+    with contextlib.closing(sqlite3.connect(db)) as conn:
+        unhashed = conn.execute(
+            "SELECT COUNT(*) FROM files WHERE md5sum IS NULL OR md5sum = ''"
+        ).fetchone()[0]
+    assert unhashed == 0, f"{unhashed} rows have no checksum"
+
+
+def test_the_bundle_names_its_commit_with_no_git_available(built, tmp_path):
+    """The embedded value is genuinely used -- nothing is looked up at run time.
+
+    This is #54 requirement 8 in practice. `src/version.py` derives
+    `SOURCE_ROOT` from `__file__`, which inside an archive is a path like
+    `/…/FileManager.pyz/src/version.py` and names no directory that exists. It
+    is computed but must stay **inert**: a bundle takes the commit from
+    `build_info`, so it never consults git and never touches that path.
+
+    Running with PATH stripped is the way to prove it. If a later change made
+    `--version` fall back to asking git, this is the test that would catch it,
+    where every other version test would still pass on a machine that has git.
+    """
+    result = subprocess.run(
+        [str(built), "--version"],
+        capture_output=True, text=True, timeout=60, cwd=str(tmp_path),
+        env={"PATH": "/nonexistent/bin", "HOME": str(tmp_path),
+             "PYTHONPATH": "/nonexistent/should/not/matter"},
+    )
+
+    assert result.returncode == 0, (
+        f"exit {result.returncode}\nstdout:\n{result.stdout}\n"
+        f"stderr:\n{result.stderr}"
+    )
+    assert re.search(r"^commit +: +[0-9a-f]{40}$", result.stdout, re.M), \
+        result.stdout
+    assert "CANNOT DETERMINE" not in result.stdout, (
+        "the bundle fell back to asking git instead of reading its own "
+        "embedded provenance"
+    )
+    assert "source checkout" not in result.stdout
