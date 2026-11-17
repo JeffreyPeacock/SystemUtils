@@ -87,6 +87,21 @@ rm -rf "${BUILD_DIR}"
 mkdir -p "${BUILD_DIR}"
 cp -r "${PROJECT_ROOT}/src" "${BUILD_DIR}/"
 
+# Record what this archive was built from, into the COPY of src/ -- never into
+# the checkout. The committed src/build_info.py holds None for every field, and
+# that None is how --version knows it is not running from a bundle (#62).
+#
+# This refuses a dirty tree, and refuses just as hard when git cannot be
+# consulted at all: a bundle that names a commit it does not contain is worse
+# than one that admits it does not know. FM_ALLOW_DIRTY=1 overrides, and the
+# artifact then reports "dirty at build time" for the rest of its life.
+if ! "${PY[@]}" "${HERE}/stamp_build_info.py" "${BUILD_DIR}/src/build_info.py"; then
+    echo "BUILD STOPPED: the build provenance could not be recorded (above)." >&2
+    echo "  A bundle whose --version cannot name its commit is not installable;" >&2
+    echo "  the consumer's installer reads it before putting the file in place (#54)." >&2
+    exit 1
+fi
+
 cat > "${BUILD_DIR}/__main__.py" <<'ENTRY'
 import sys
 
@@ -125,6 +140,25 @@ if ! (cd / && PYTHONPATH=/nonexistent/should/not/matter "${OUTPUT}" help >/dev/n
     exit 1
 fi
 
+# --version has to work from the installed artifact, not just in a test: it is
+# the consumer's gate before installing (#54 requirement 9). Checked here for
+# the same reason the help run is -- verify the effect, not the exit status of
+# the build. A 40-character hex commit, or this is not installable.
+if ! version_out="$(cd / && PYTHONPATH=/nonexistent/should/not/matter "${OUTPUT}" --version)"; then
+    echo "BUILD PROBLEM: ${OUTPUT} could not answer --version at all." >&2
+    exit 1
+fi
+if ! printf '%s\n' "${version_out}" | grep -qE '^commit +: +[0-9a-f]{40}$'; then
+    echo "BUILD PROBLEM: --version did not report an embedded commit." >&2
+    printf '  got:\n%s\n' "${version_out}" >&2
+    exit 1
+fi
+if printf '%s\n' "${version_out}" | grep -q 'source checkout'; then
+    echo "BUILD PROBLEM: the archive reports itself as a source checkout," >&2
+    echo "  which means src/build_info.py was not stamped into it." >&2
+    exit 1
+fi
+
 shebang="$(head -1 "${OUTPUT}")"
 if [ "${shebang}" != '#!/usr/bin/python3 -I' ]; then
     echo "BUILD PROBLEM: shebang is '${shebang}', expected '#!/usr/bin/python3 -I'" >&2
@@ -133,7 +167,8 @@ if [ "${shebang}" != '#!/usr/bin/python3 -I' ]; then
 fi
 
 printf 'built      : %s (%s)\n' "${OUTPUT}" "$(du -h "${OUTPUT}" | cut -f1)"
-echo 'verified   : runs from / and prints its help'
+printf 'version    : %s\n' "$(printf '%s\n' "${version_out}" | tr '\n' ' ')"
+echo 'verified   : runs from /, prints its help, and names its commit'
 echo
 echo 'Run a scan as root. Keep the database OUTSIDE every scanned tree --'
 echo 'a .db inside the target is found by os.walk and scanned like any other file:'
