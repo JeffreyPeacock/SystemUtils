@@ -23,11 +23,6 @@ jobs:
       - name: Install dev dependencies
         run: pip install -r requirements-dev.txt
 
-      # src/main.py imports src/gui.py, which imports tkinter, so the test
-      # suite needs it even though nothing under test opens a window.
-      - name: Verify tkinter is available
-        run: python -c "import tkinter; print('tkinter', tkinter.TkVersion)"
-
       - name: pytest
         run: python -m pytest
 

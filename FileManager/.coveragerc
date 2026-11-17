@@ -9,20 +9,29 @@
 [run]
 branch = True
 
-# src/gui.py is a Tkinter widget tree and a mainloop(). Asserting on widget
-# construction tests the library, not this code, so it is deliberately
-# untested -- and while it sat inside the measurement it made the target in
-# docs/REQUIREMENTS.txt unreachable: 82 of 601 statements, capping the total
-# near 88% with every other module at 100% (#45).
+# NOTHING IS OMITTED FROM MEASUREMENT.
 #
-# This omission is NOT a way to make a number look better. It is scoped to one
-# file for one recorded reason, and .coverage-summary.md still lists gui and
-# says it is excluded, so the decision stays visible rather than becoming an
-# absence nobody notices. The logic worth testing inside gui.py should be
-# extracted out of the widget code (#3); when it is, it lands in a module that
-# is measured, and this list does not grow to follow it.
+# There was one entry, src/gui.py, from #45 until #51 removed the GUI from this
+# project entirely. The exclusion existed because a Tkinter widget tree cannot
+# be unit-tested without asserting on the library, and while it sat inside the
+# measurement it made the target in docs/REQUIREMENTS.txt unreachable: 82 of 601
+# statements, capping the total near 88% with every other module at 100%.
 #
-# Adding a second entry here needs the same standard: a reason written down,
-# and a ticket.
-omit =
-    src/gui.py
+# The GUI is now a separate application (#53), which is the better answer to the
+# same problem -- it has its own floor and its own standard instead of a hole in
+# this one. There is no `omit =` key here at all, deliberately: an empty list is
+# the honest statement of the current position, and
+# tests/test_coverage_config.py fails if one appears.
+#
+# ADDING AN ENTRY HERE needs all three, and the tests enforce each:
+#
+#   1. a reason recorded in EXCLUSION_REASONS in scripts/coverage_summary.py,
+#      because an omission nobody can see is indistinguishable from a module
+#      nobody wrote
+#   2. a ticket
+#   3. an edit to tests/test_coverage_config.py, which currently asserts that
+#      this file omits nothing -- so the first exclusion cannot be slipped in as
+#      a one-line config change
+#
+# An omit list is the easiest place in a repository to make a number say
+# whatever you want. That is what the ceremony is for.

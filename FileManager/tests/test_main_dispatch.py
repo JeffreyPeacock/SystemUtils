@@ -10,12 +10,6 @@ action does the wrong thing.
 `tests/test_main_cli.py` already covers argument validation and the actions
 reached by #13's fixture. This file covers the arms nothing invoked.
 
-Two boundaries are deliberate:
-
-  `--use-gui` asserts the dispatch *call*, patched. Opening a Tkinter window in
-  CI tests the library, which is the same line `.coveragerc` draws around
-  gui.py; #3 is the ticket that moves the testable logic out of the widget.
-
 Two things stay uncovered, named here rather than pragma'd away:
 
   `sys.exit(main())` under `if __name__ == "__main__"` runs only when the file
@@ -126,53 +120,6 @@ def test_min_duplicates_1_counts_single_files_but_does_not_print_them(run_cli,
     assert "Found 2 duplicates" in result.stdout, "the lone file is counted"
     assert str(left) in result.stdout and str(right) in result.stdout
     assert str(lone) not in result.stdout, "a single-path group must not be listed"
-
-
-def test_use_gui_hands_the_groups_to_the_viewer_without_opening_one(run_cli, db_path,
-                                                                    dup_tree,
-                                                                    monkeypatch):
-    """Asserts the dispatch, not the widget.
-
-    Opening a Tkinter window in CI would test the library rather than this
-    line, which is the same boundary .coveragerc draws around gui.py.
-    """
-    left, right = dup_tree.duplicated[0]
-    _record(db_path, left, right)
-    handed: list[dict] = []
-    monkeypatch.setattr(main_module, "show_duplicates_gui", handed.append)
-
-    result = run_cli("report-duplicates", "--db-path", db_path, "--use-gui")
-
-    assert result.exit_code == 0
-    assert len(handed) == 1
-    assert list(handed[0].values()) == [[str(left), str(right)]]
-
-
-def test_use_gui_is_capped_at_a_hundred_groups(run_cli, db_path, monkeypatch):
-    """The cap is the reason the GUI arm is not just a call.
-
-    Built with synthetic rows: 101 real duplicate pairs would be 202 files to
-    hash for one assertion about a slice.
-    """
-    from src import db as db_module
-
-    def work(conn):
-        for i in range(101):
-            for copy in range(2):
-                conn.execute(
-                    "INSERT INTO files (path, md5sum, size, last_modified) "
-                    "VALUES (?, ?, ?, ?)",
-                    (f"/synthetic/{i:03d}/copy-{copy}", f"{i:032d}", 10, 0),
-                )
-    db_module.with_connection(db_path, work, commit=True, description="seed groups")
-
-    handed: list[dict] = []
-    monkeypatch.setattr(main_module, "show_duplicates_gui", handed.append)
-
-    result = run_cli("report-duplicates", "--db-path", db_path, "--use-gui")
-
-    assert "Found 101 duplicates" in result.stdout, "the count is not truncated"
-    assert len(handed[0]) == 100, "only the display is capped, at 100"
 
 
 # -- audit-db, and the settings report that precedes it --------------------

@@ -31,3 +31,10 @@ test-results.xml
 *.db
 .processed_files.txt
 rm_commands.txt
+
+# Build artifacts from FileManager/scripts/build-pyz.sh. The bundle is built,
+# never committed -- a committed one goes stale against the source silently.
+# dist/FileManager.pyz is the path the Desktop-Ops installer reads (name set by
+# the owner 2026-11-16; #54 had said filemanager.pyz -- recorded on that ticket).
+FileManager/dist/
+FileManager/build/

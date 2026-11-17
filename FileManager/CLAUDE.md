@@ -20,14 +20,22 @@ points. Its output is a list of files a human may then delete — a wrong answer
 has consequences past this process, which is what makes the correctness notes
 below worth reading before changing anything.
 
-`docs/REQUIREMENTS.txt` is the original specification. One of its requirements is
-still **not met**: the "full featured graphical user-interface" — only a
-paginated Tkinter duplicate list exists (#11). The 95% coverage requirement is
-**met**, at 99.59%; epic #8 and its children #32-#36 and #45 are closed.
+`docs/REQUIREMENTS.txt` is the original specification. Its "full featured
+graphical user-interface" requirement is **not met here, and will not be**: the
+GUI left this project in #51 and becomes a separate application (#53). This is
+a headless CLI scanner — no Tk, no display, no optional GUI flag. The 95%
+coverage requirement is **met**, at 99.58%; epic #8 and its children #32-#36
+and #45 are closed.
 
 ## Tech Stack
 
-**Python 3.14.7** · **sqlite3** · **hashlib** · **argparse** · **threading** + **concurrent.futures** + **queue** · **tkinter** (optional GUI) · **pytest** + **pytest-cov** + **pytest-timeout** (`pytest.ini`) · **mypy** (`mypy.ini`).
+**Python 3.14.7** · **sqlite3** · **hashlib** · **argparse** · **threading** + **concurrent.futures** + **queue** · **pytest** + **pytest-cov** + **pytest-timeout** (`pytest.ini`) · **mypy** (`mypy.ini`).
+
+**No tkinter, and nothing else optional.** The GUI moved out in #51, so this
+runs on any Python 3 without Tk installed, and CI no longer has to verify
+tkinter before the suite. It also means the tool can be pinned to a specific
+system interpreter in isolated mode, which a Tk dependency would have made
+fragile.
 
 Standard library only — there are no runtime dependencies. `requirements.txt` is
 deliberately empty of packages; test and type tooling is in
@@ -66,14 +74,30 @@ python -m pytest --no-cov -q                                # skip the floor whi
 
 # Types
 python -m mypy src/
+
+# Bundle as one executable, for running as root
+scripts/build-pyz.sh     # -> dist/FileManager.pyz (~56K); optional arg overrides
+sudo ./dist/FileManager.pyz --threads 8 --db-path /var/lib/filemanager/home2.db scan /home2
 ```
+
+**`sudo python src/main.py` runs the wrong interpreter.** `sudo` resolves
+`python` from *root's* PATH, not the pyenv shim, so it silently picks a
+different interpreter or none. `scripts/build-pyz.sh` solves exactly that by
+pinning `/usr/bin/env python3` into a `zipapp` archive — stdlib only, no
+vendoring, 56K (#52). It verifies the artifact by **running** it from `/`,
+because a zipapp can be written successfully and still be unrunnable, and
+running it from inside this directory would let `src.` imports resolve from the
+working directory rather than from the archive. `tests/test_build_pyz.py`
+rebuilds it in CI; its load-bearing assertion is that the archive holds no
+`.pyc`, since `cp -r src` copies bytecode and CPython invalidates on
+`(mtime, size)`.
 
 ## Testing
 
-**201 tests across 17 modules, all passing, no xfails.** Coverage is on by default
+**209 tests across 18 modules, all passing, no xfails.** Coverage is on by default
 via `pytest.ini` (`--cov=src --cov-branch`), writes `coverage.xml` and
 `test-results.xml`, and enforces `--cov-fail-under=99` against a measured
-**99.59%** combined line+branch coverage.
+**99.58%** combined line+branch coverage.
 
 Per-module figures live in `.coverage-summary.md`, regenerated every run and
 committed — read that rather than duplicating a table here that goes stale. As
@@ -84,17 +108,26 @@ the file is executed as a script, and the fall-through past the last `elif` is
 unreachable because argparse rejects anything outside `choices`. Forcing either
 would assert on a state the CLI cannot produce.
 
-**`src/gui.py` is omitted from measurement**, in `.coveragerc` — coverage.py does
-not read `pytest.ini`, so the omit list cannot live there. It is a Tkinter widget
-tree and a `mainloop()`; testing widget construction asserts on the library. It
-was measured until #45, where at 82 of 601 statements it capped the total near
-88% and put the 95% requirement out of reach however well everything else was
-tested. The omission is deliberately **visible**: `.coverage-summary.md` still
-names `gui` under "Excluded from measurement" with the reason, and
-`tests/test_coverage_config.py` fails if a file is omitted without one, if the
-summary stops naming it, or if the summary and `.coveragerc` disagree. Adding a
-second entry to that list needs the same standard — a written reason and a
-ticket.
+**Nothing is omitted from measurement.** `.coveragerc` has no `omit` key at all
+— `src/gui.py` was the only entry, from #45 until #51 removed the GUI from this
+project. Coverage now covers all of `src/`. The omit list has to live in
+`.coveragerc` rather than `pytest.ini`, because coverage.py does not read
+`pytest.ini`.
+
+**Adding the first exclusion back needs three things**, and
+`tests/test_coverage_config.py` enforces each: a reason in `EXCLUSION_REASONS`
+(`scripts/coverage_summary.py`), a ticket, and an edit to that test, which
+currently asserts the live config omits nothing. The third is the real control —
+it stops an exclusion being slipped in as a one-line config change.
+
+**The guard is tested against synthetic configs, not the live one.** With an
+empty omit list, every "for each omitted file" assertion iterates nothing and
+passes without testing anything — which looks identical to a working guard
+(§3a). So the renderer is driven with a fabricated `coverage.xml` and a
+fabricated omit list, covering an omission with a reason, one without (renders a
+⚠️ warning), and one that is not taking effect (the file still appears in the
+measured table). That is why the machinery survives with an empty dict rather
+than being deleted and rewritten later from memory.
 
 **The floor is a ratchet — it only goes up.** Raise `--cov-fail-under` in the
 same PR that raises real coverage; never lower it to make a red build green.
@@ -102,8 +135,9 @@ Same rule for the per-module opt-out stanzas in `mypy.ini`: a module leaves that
 list by **passing** `check_untyped_defs`, never by the defaults being loosened.
 `gui` and `main` left it in #36 without needing annotation at all — the stanzas
 had been guarding nothing, which is worth re-testing occasionally rather than
-assuming. The three that remain each fail on one container literal, named in
-`mypy.ini`. Reasoning in repo-root `docs/Development-Principles.md` §4.
+assuming. (`gui` has since left the project altogether with the GUI, #51, so
+mypy now checks 7 files.) The three that remain each fail on one container
+literal, named in `mypy.ini`. Reasoning in repo-root `docs/Development-Principles.md` §4.
 
 Every run writes **`.coverage-summary.md`**, and it is **committed**: overall line and
 branch tables, a per-file breakdown with 🟢/🟡/🔴 badges, and the test counts.
@@ -156,7 +190,6 @@ beyond argument validation. Below it is a flat module layer, no classes:
 - `src/db.py` — the only module that calls `sqlite3.connect`. Owns the schema, every query, and the lock-retry behaviour, all through one gateway: `with_connection(db_path, work, commit=...)`. Also owns `UniquenessUnknown`, raised when a file's uniqueness cannot be determined — never answered as `False`, which is a verdict (#41).
 - `src/file_ops.py` — directory walking and the decision of whether a file needs hashing. `process_file` is the core routine.
 - `src/reporting.py` — formats and prints; every query it runs is a `db.py` function (#10). It must not import `sqlite3`, and `tests/test_db_owns_the_connection.py` fails if it does.
-- `src/gui.py` — a Tkinter duplicate browser, reached only via `report-duplicates --use-gui`. Writes `rm_commands.txt` rather than deleting anything itself.
 - `src/md5sum.py`, `src/utils.py` — `compute_md5` (4 KB chunks), `get_file_mtime_in_ms`,
   and `report_settings`, which prints each setting's name, value and origin before a
   destructive run and refuses a credential-shaped name outright
@@ -221,6 +254,7 @@ Entries change only when the behaviour does — four went on 2026-09-04 with
 #1, #2, #4 and #5, and the `--min-duplicates` and `remove_record` entries were
 rewritten the same day when #6 and #7 landed.
 
+- **`--use-gui` no longer exists, and passing it is a hard failure.** The GUI left this project in #51, so `report-duplicates --use-gui` is an argparse rejection — exit code 2, no report produced. Any wrapper, cron entry or shell history carrying the flag stops working rather than quietly ignoring it, which is the intended direction: a scan that silently dropped the flag would look like it had run normally. The replacement is a separate application (#53).
 - **`--min-duplicates` counts copies, and its default is 2.** `find_duplicates_with_min_count` compares with `>=`, so 2 means "a file and at least one other like it". Until #6 the comparison was `>` with a default of 1: the same output, reached by an argument that meant one less than it said, so `--min-duplicates 3` returned groups of four.
 - **Record removal is two functions in `db.py`, named apart.** `remove_record_by_path` takes one exact path; `remove_records_by_regex` takes a pattern matched against the whole path. Until #7 both were called `remove_record`, in different modules, with opposite behaviour. `tests/test_removal_function_names.py` fails if any module under `src/` reintroduces the bare name.
 - **`scan-unique-files` writes into the directory it scans.** It appends a `.processed_files.txt` resume log at the root of the target directory and reads it back on the next run. Delete it to force a full recheck. Because the log lands *inside* the scanned tree, the next `os.walk` finds it and checks it like any other file — so a second run over an unchanged tree reports exactly one file: the log.
@@ -276,6 +310,14 @@ want it at a glance.
 Four silent-wrong-answer paths are fixed — #1 (prefix-anchored removal), #2
 (audit-db emptying an unmounted volume), #43 (`scan-dir-report` never returning)
 and #41 (an unreadable file reported as a duplicate). The coverage epic **#8**
-is closed.
+is closed, and the GUI tickets #3 and #11 closed with #51 when the GUI left.
 
-What remains is **2 open tickets**, both about the GUI: **#3** and **#11**.
+**#50 is the one to read before trusting this database for integrity
+checking.** Neither `scan` nor `audit-db` can detect silent corruption: both
+compare `(size, mtime)` and skip hashing when they match, so a rescan skips
+exactly the files whose contents were in question. Bit rot, a bad sector and a
+failing cable all rewrite bytes without touching size or mtime. The baseline
+scan is correct; nothing reads it back. Demonstrated on the ticket.
+
+Also open: **#52** (the zipapp bundle) and **#53** (the GUI as its own
+application, carrying the decision from #11 and the path-handling bug from #3).

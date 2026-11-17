@@ -83,7 +83,7 @@ Write the message as the author: what changed and why, then stop.
 ## Organisation & Repository
 
 - **Owner:** `JeffreyPeacock` — a personal account, **not** an organisation
-- **Repository:** `JeffreyPeacock/SystemUtils` (private)
+- **Repository:** `JeffreyPeacock/SystemUtils` — **public**. Verified against the API (`gh api repos/... --jq .visibility`); this file said "private" until 2026-11-16. Anything written into an issue, PR or commit message here is world-readable.
 - **Project board:** SystemUtils, number `14` — https://github.com/users/JeffreyPeacock/projects/14
 
 Two consequences of the owner being a user rather than an organisation, both of
