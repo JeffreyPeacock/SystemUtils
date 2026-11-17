@@ -45,7 +45,8 @@ def usage():
                             Use --dry-run first: this action deletes rows.
 
     Exit codes:
-        0                   the action completed and read everything it was asked to
+        0                   the action completed and read everything it was asked
+                            to, or help was requested
         1                   a required argument was missing or invalid
         2                   argparse rejected the command line
         3                   scan or audit-db completed but could not read part of
@@ -59,7 +60,8 @@ def usage():
         compare-directories Compare two directories and report unique files.
         get-file-info       Get information of a file from the database.
         scan-unique-files   Scan a directory and report unique files.
-        help                Show this help message.
+        help                Show this help message. `-h`, `--help` and `-?`
+                            do the same and also exit 0.
 
     Options:
         --db-path           Path to the database file or directory.
@@ -132,6 +134,20 @@ def get_file_info_action(db_path, file_path):
         print(f"MD5: {get_md5_by_path(db_path, file_path)}")
     else:
         print(f"No information found for file: {file_path}")
+
+# The conventional ways to ask for help. Checked against the command line
+# directly rather than registered with argparse, for two reasons that both have
+# to hold at once (#58):
+#
+#   * the help text is `usage()`, which documents the actions, the options, the
+#     exit codes and worked examples. argparse's generated help has none of that.
+#   * `action` is a required positional, so `main.py --help` with nothing else
+#     would fail the missing-argument check before argparse looked at the flag.
+#
+# `-?` is included because it is conventional, with the caveat that `?` is a
+# shell glob character: it needs quoting as `'-?'` in some shells.
+HELP_FLAGS = ('-h', '--help', '-?')
+
 
 # An action that ran to completion but could not read part of what it was asked
 # to read. Distinct from 1 (bad argument) and 2 (argparse rejection), both of
@@ -240,9 +256,27 @@ def main():
         help='Comma-separated list of prefixes to exclude paths from processing during audit-db'
     )
 
+    # Before parsing: see HELP_FLAGS. Asking for help is not an error, and it
+    # must work with no action given.
+    if any(arg in HELP_FLAGS for arg in sys.argv[1:]):
+        usage()
+        return 0
+
     try:
         args = parser.parse_args()
-    except SystemExit:
+    except SystemExit as exc:
+        # Respect the code argparse chose instead of flattening every exit to 2.
+        # Returning 2 unconditionally meant a SystemExit(0) -- which is what
+        # argparse raises for its own --help, and will raise for the --version
+        # action in #54 -- was reported as a rejection. Same shape as #23, where
+        # every branch `return`ed and so exited 0 whatever had happened.
+        # `exc.code` is compared directly. It can be an int, a string or None;
+        # only an int 0 means success, and neither a string nor None equals 0,
+        # so both land on the rejection path without a type check. A type check
+        # was tried here and removed: it could not be made to change any
+        # observable behaviour, and a guard that cannot fail is noise.
+        if exc.code == 0:
+            return 0
         usage()
         return 2
 

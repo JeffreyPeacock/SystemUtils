@@ -232,3 +232,26 @@ def test_the_bundle_exits_zero_on_a_tree_it_could_read(built, tmp_path):
     assert "2 hashed, 0 skipped unchanged, 0 failed" in result.stdout
     with closing(sqlite3.connect(db)) as conn:
         assert conn.execute("SELECT count(*) FROM files").fetchone()[0] == 2
+
+
+@pytest.mark.parametrize("form", ["help", "--help", "-h", "-?"])
+def test_the_bundle_answers_every_help_form_with_zero(built, form):
+    """#58, through the artifact a consumer's installer actually probes.
+
+    An install check that runs `FileManager.pyz --help` is the first thing
+    anyone writes, and it exited 2. Asserted here as well as in
+    `test_help_flags.py` because this runs under the pinned `/usr/bin/python3`
+    in isolated mode, which is a different program from `python src/main.py`.
+    """
+    result = subprocess.run(
+        [str(built), form],
+        cwd="/", capture_output=True, text=True, timeout=60,
+        env={**os.environ, "PYTHONPATH": "/nonexistent/should/not/matter"},
+    )
+
+    assert result.returncode == 0, (
+        f"`FileManager.pyz {form}` exited {result.returncode}\n"
+        f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+    )
+    assert "File Manager Application" in result.stdout
+    assert result.stderr == "", f"it also complained: {result.stderr!r}"

@@ -99,7 +99,7 @@ All the per-file logging goes to stderr, so the summary survives the
 
 | Exit | Meaning |
 |---|---|
-| 0 | the action completed and read everything it was asked to read |
+| 0 | the action completed and read everything it was asked to read, or help was requested |
 | 1 | a required argument was missing or invalid |
 | 2 | `argparse` rejected the command line |
 | 3 | it completed but **could not read part of the tree** |
@@ -111,8 +111,7 @@ case exited **0**, so a partial index was indistinguishable from a complete one.
 A path given on the command line that is neither a file nor a directory counts as
 a failure for the same reason.
 
-**`--help` and `-h` currently exit 2, not 0.** The help action is the positional
-`help`. See the backlog.
+`-h`, `--help`, `-?` and the positional `help` all print the help and exit 0.
 
 ### Running as root: build the bundle
 
@@ -204,9 +203,9 @@ python -m mypy src/           # must be clean
 
 ### Testing
 
-236 tests in 19 modules, no xfails. `pytest.ini` enables branch coverage, writes
+264 tests in 20 modules, no xfails. `pytest.ini` enables branch coverage, writes
 `coverage.xml` and `test-results.xml`, and fails under **99%** — the current real
-measurement is 99.63%, which meets the 95% `docs/REQUIREMENTS.txt` has asked for
+measurement is 99.64%, which meets the 95% `docs/REQUIREMENTS.txt` has asked for
 since 2024. **Nothing is excluded from measurement**: `src/gui.py` was the only
 omission and it left with the GUI in #51, so `.coveragerc` has no `omit` key at
 all. The gap was closed by epic
@@ -248,10 +247,10 @@ Tracked on the [SystemUtils board](https://github.com/users/JeffreyPeacock/proje
 filtered by `component:file-manager`. The GUI tickets #3 and #11 closed with
 #51, when the GUI left this project for one of its own (#53).
 
-One is worth reading before relying on this database to detect corruption:
+Worth reading before relying on this database to detect corruption:
 
 - **#50** — neither `scan` nor `audit-db` can detect silent corruption. Both compare `(size, mtime)` and skip hashing when they match, so a rescan skips exactly the files whose contents were in question: bit rot, a bad sector and a failing cable all rewrite bytes without changing size or mtime. The baseline is recorded correctly; nothing reads it back.
-- **`--help` / `-h` exit 2 instead of printing help and exiting 0.** `argparse` is constructed with `add_help=False`, and the `except SystemExit` around `parse_args` returns 2 for every exit code including 0, so both halves have to change together. The positional `help` action works and exits 0.
+- **#54** — the remaining packaging work for the single-file bundle: `--version` carrying the build commit, a timestamped header with the zone, and the rest of the artifact test.
 
 Four silent-wrong-answer paths are fixed: #1 and #2; #43, where
 `scan-dir-report` never returned at all until its shutdown was tested; and #41,
