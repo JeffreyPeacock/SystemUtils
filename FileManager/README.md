@@ -217,9 +217,10 @@ Tracked on the [SystemUtils board](https://github.com/users/JeffreyPeacock/proje
 filtered by `component:file-manager`. The GUI tickets #3 and #11 closed with
 #51, when the GUI left this project for one of its own (#53).
 
-One is worth reading before relying on this database to detect corruption:
+Two are worth reading before relying on this database to detect corruption:
 
 - **#50** — neither `scan` nor `audit-db` can detect silent corruption. Both compare `(size, mtime)` and skip hashing when they match, so a rescan skips exactly the files whose contents were in question: bit rot, a bad sector and a failing cable all rewrite bytes without changing size or mtime. The baseline is recorded correctly; nothing reads it back.
+- **#57** — a scan that could not read part of the tree exits **0** and prints no count of what it missed. Measured: 1 of 2 files recorded, exit 0, on a tree with one file at mode `000`. Until this is fixed, exit 0 means the process finished, not that the tree was read.
 
 Four silent-wrong-answer paths are fixed: #1 and #2; #43, where
 `scan-dir-report` never returned at all until its shutdown was tested; and #41,

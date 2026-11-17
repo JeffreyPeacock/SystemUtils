@@ -425,3 +425,62 @@ and coverage 99.59% → **99.58%** — a 0.01pp fall from deleting *covered* cod
 untested code. The floor stays at 99; a ratchet does not move down.
 
 **Related issues:** #51, #53, #3, #11, #45, #52
+
+---
+
+## The bundle is a zipapp with an absolute isolated-mode shebang
+
+**Problem.** The scan that this tool exists to run — a checksum baseline over `/home2`
+and a backup volume — has to run as root, because the trees contain files the developer
+account cannot read, and a file skipped for permissions is recorded as nothing at all.
+But the project's interpreter is a pyenv virtualenv in the developer's home directory.
+Under `sudo` that is the wrong interpreter to reach for and often an unreachable one, and
+a scheduled run that resolves `python` from the caller's environment is how #9 happened:
+the wrappers pointed at an older checkout for months while every test passed.
+
+**Decision.** Ship one file. `scripts/build-pyz.sh` copies `src/` into a build directory,
+writes a three-line `__main__.py`, and calls `python -m zipapp` with
+`-p '/usr/bin/python3 -I'`, producing `dist/FileManager.pyz` — 52K, standard library
+only, nothing to install at run time.
+
+Three parts of that are deliberate and each is pinned by a test.
+
+**`/usr/bin/python3`, written absolutely, not `env -S python3`.** `env` resolves `python3`
+from the caller's `PATH`, which reintroduces a smaller version of exactly the problem the
+bundle exists to remove — under `sudo` the PATH is not the one that was tested. `env -S`
+also needs coreutils 8.30 or newer. The absolute path says which interpreter runs, and
+`tests/test_build_pyz.py` asserts the first line of the artifact is the exact string
+`#!/usr/bin/python3 -I`, because a consumer's installer matches on it.
+
+**`-I`, and exactly one option.** Isolated mode drops `PYTHONPATH`, user site-packages
+and the script's directory from `sys.path`, so a root run cannot import a module planted
+by an unprivileged user in a directory that happens to be on the path. Only one option
+fits: Linux passes everything after the interpreter path in a shebang as a **single**
+argument, so `-I -B` arrives as the one string `"-I -B"` and the interpreter exits 2 with
+`Unknown option`. Verified rather than assumed.
+
+**The build clears `__pycache__` before archiving.** `cp -r src` copies bytecode next to
+the source, and a zipapp serves a stale `.pyc` without complaint: CPython invalidates on
+`(mtime, size)`, so a file rewritten to the same length inside one second keeps the old
+bytecode. This had already produced one wrong conclusion in this repository before the
+guard existed.
+
+**Alternatives rejected.** PyInstaller, shiv and vendoring a virtualenv all add a
+dependency and a build toolchain to a project whose entire argument is that it needs
+neither — there are no runtime dependencies to bundle. Documenting
+`sudo -E ~/.pyenv/versions/sys-utils/bin/python src/main.py` instead was rejected because
+it is the #9 failure written down as an instruction.
+
+**What the guards cost to be trusted.** Each was proven to fail with the defect
+reintroduced before being believed: disabling the `__pycache__` removal put 15 `.pyc`
+files in the archive and failed the test; `chmod -x` on the build script failed the mode
+check by name; a zipapp whose `__main__.py` raises made the build script exit non-zero.
+A detector that stops nothing is not a gate (`docs/Development-Principles.md` §3a).
+
+**What the bundle does not fix.** It changes how the scanner is invoked, not what it
+reports. A bundled scan that cannot read part of the tree still exits 0 with no failure
+count (#57), and nothing verifies a checksum once recorded (#50). The remaining
+packaging requirements — a `--version` carrying the build commit, and a timestamped
+header with the zone — are #54.
+
+**Related issues:** #52, #54, #57, #9

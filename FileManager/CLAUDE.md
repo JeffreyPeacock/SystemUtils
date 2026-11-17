@@ -319,5 +319,15 @@ exactly the files whose contents were in question. Bit rot, a bad sector and a
 failing cable all rewrite bytes without touching size or mtime. The baseline
 scan is correct; nothing reads it back. Demonstrated on the ticket.
 
-Also open: **#52** (the zipapp bundle) and **#53** (the GUI as its own
+**#57 is the gate on using this tool for an unattended baseline.** A scan that
+could not read part of the tree exits **0** with no failure count — measured at 1
+of 2 files recorded, exit 0, on a tree with one file at mode `000`. A partial index
+that reports success is the one failure here that cannot be found afterwards: the
+database looks identical whether a file was absent or merely unreadable. Same class
+as #41 and #2. It is requirement 11 of #54, split out as its own ticket.
+
+Also open: **#54** (the remaining zipapp requirements — `--version` with the
+embedded commit, which gates the Desktop-Ops installer; the timestamped header with
+the zone; the rest of the artifact test) and **#53** (the GUI as its own
 application, carrying the decision from #11 and the path-handling bug from #3).
+The bundle itself shipped in #52.
