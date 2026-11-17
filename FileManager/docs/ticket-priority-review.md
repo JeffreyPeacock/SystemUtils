@@ -3,12 +3,13 @@
 The SystemUtils project board (#14) on GitHub holds the authoritative detail; this doc is the
 at-a-glance ordering view the board doesn't give cleanly.
 
-**Snapshot:** 2026-11-17 12:27 MST · 4 open · 2 Prioritized, 2 Backlog
+**Snapshot:** 2026-11-17 12:43 MST · 5 open · 2 Prioritized, 3 Backlog
 
 |  Pri   | #  |    Status   |   Area   | Title | Note |
 |:------:|:--:|:-----------:|:--------:|-------|------|
 | **p2** | 50 | Prioritized | Scanning | No way to verify stored checksums: scan and<br>audit-db both skip on (size, mtime) and miss<br>corruption | The read-back half of the integrity problem: the<br>baseline is recorded correctly and nothing ever<br>checks it. `/home2` is btrfs, which already<br>checksums data and is scrubbed, so the real case is<br>the ext4 backup volume. Pairs with #57 — a gap in<br>the index and an unverified index fail the same<br>way. |
 | **p2** | 54 | Prioritized | Tooling  | FileManager: ship a single zipapp executable<br>(dist/FileManager.pyz) for root-run unattended<br>scans | Requirements 1-5, 8 and 11 are done: 1-5 and 8 in<br>#52/PR #55, and 11 split out as #57 and merged in<br>PR #59. 6 rejected, 7 relaxed. What is left is<br>`--version` carrying the build commit, which gates<br>the Desktop-Ops installer; a timestamped header<br>with the zone; and the rest of the artifact test.<br>The artifact is `FileManager.pyz` — the owner<br>renamed it on 2026-11-16, and the title,<br>requirement 2 and the three acceptance checks were<br>all corrected to match on 2026-11-17. Desktop-Ops<br>had reached the same name independently. |
+| **p2** | 62 |   Backlog   | Tooling  | FileManager: --version must print the build commit,<br>build time and a dirty-tree flag (#54 requirement<br>9) | Requirement 9 of #54, split out so #54 stays the<br>consumer's spec — the same split that took<br>requirement 11 out as #57.<br>**This is the last gate on Desktop-Ops installing the bundle**:<br>their installer checks `--version` before putting<br>the artifact in place, so until this lands they can<br>only run it from the repo. The archive has no git<br>repository at run time, so the build script embeds<br>the commit and build time into the copy it zips;<br>zip mtimes make two builds of one commit differ<br>byte for byte, so a checksum of the `.pyz`<br>identifies a build and not a source revision. Two<br>decisions are open in the body: what `--version`<br>says when run from an unbuilt checkout, and that a<br>`git status` that cannot run is not a clean tree. |
 | **p4** | 53 |   Backlog   |   GUI    | New utility: a GUI duplicate browser and editor,<br>separate from the CLI scanner | Carries the decision from #11 — the requirements<br>gap was resolved by making the GUI its own<br>application rather than revising the requirement.<br>Carries the defect from #3 as well: the old GUI<br>wrote `PY_VAR3`, the checkbox object, not a path,<br>so its `rm_commands.txt` was never runnable. Build<br>the path logic outside the widget tree this time.<br>Still needs a name and its own `component:` label. |
 | **p4** | 60 |   Backlog   | Tooling  | audit_db's counts dict is heterogeneous: typed as<br>dict[str, Any] behind a mypy opt-out | Filed from the ratchet check while merging PR #59:<br>#57 had added `counts['failures']` to a dict mypy<br>infers as `dict[str, int]`, and the `src.db`<br>opt-out swallowed the error, so<br>`python -m mypy src/` stayed green. PR #61 restored<br>the documented two-literal state with<br>`dict[str, Any]`. The real fix is a `TypedDict`,<br>which also unblocks typing `src.main` — that module<br>passes today only because `audit_db` returns `Any`<br>out of an unchecked one. Changes the return<br>contract and its three callers. |
 
@@ -16,7 +17,7 @@ at-a-glance ordering view the board doesn't give cleanly.
 
 | Priority | p1 | p2 | p3 | p4 | p5 | — | Total |
 |----------|---:|---:|---:|---:|---:|--:|------:|
-| Open | 0 | 2 | 0 | 2 | 0 | 0 | 4 |
+| Open | 0 | 3 | 0 | 2 | 0 | 0 | 5 |
 
 &nbsp;
 
