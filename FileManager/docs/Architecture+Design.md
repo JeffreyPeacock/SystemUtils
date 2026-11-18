@@ -770,3 +770,85 @@ the premise, and if it ever starts failing, this design should be re-read before
 being trusted.
 
 **Related issues:** #50, #57, #41, #23
+
+---
+
+## The manual is troff, and its markdown copy is generated
+
+The CLI documented itself in two places that a reader had to already know
+about: `usage()`, printed by `help`, and this project's `CLAUDE.md`, which is
+written for whoever is changing the code rather than for whoever is running it.
+Neither is a manual. An operator installing the bundle on another machine has
+no checkout to read, and `man filemanager` is where they would look.
+
+The manual is therefore `man/filemanager.1`, written in troff with the
+`man(7)` macros: the format `man` renders, the format a package installs, and
+the format whose conventions — SYNOPSIS, EXIT STATUS, FILES, ENVIRONMENT,
+BUGS — already have the sections this tool needs. Its exit-code table and its
+stdout/stderr split are the two things an unattended caller has to get right,
+and both now have a home that is not a comment in `main.py`.
+
+Troff is not readable in an editor, so a markdown rendering is committed beside
+it. **The troff is the source and the markdown is generated** — never the other
+way round, and never both maintained by hand, which is how two copies of one
+document come to disagree.
+
+### Why a renderer in this repository rather than pandoc or groff
+
+`scripts/render_man.py` is about 250 lines of standard library. Both obvious
+alternatives were tried first and measured.
+
+`groff -man -Tutf8 | col -b` produces the exact `man` rendering as plain text
+and is one line. It was rejected on what the check would then be able to prove:
+the gate is a byte comparison between the committed copy and a fresh render, so
+the renderer has to run **where the gate runs**, and depending on groff being
+installed in CI makes a green build depend on a package the project does not
+otherwise need.
+
+`pandoc -f man -t gfm` is also one line, and its output was wrong in three
+places. Both `.SY`/`.YS` synopsis groups collapsed into a single run-on
+paragraph, losing the distinction between the two ways to invoke the tool.
+`.BI scan " path"` rendered as `**scan*** path*`, which is not valid emphasis
+in any markdown dialect. And the troff `` ` ``…`'` quoting around literal
+commands became backslash-escaped punctuation rather than a code span. Beyond
+the output, pandoc's rendering changes between pandoc versions, so a byte
+comparison would fail on a version bump rather than on a real drift — a gate
+that cries wolf is a gate that gets deleted.
+
+### The renderer refuses rather than guesses
+
+It implements exactly the macros and escapes `man/filemanager.1` uses, and
+raises `UnsupportedTroff` on anything else. Nothing is written when it raises.
+
+The alternative — skipping what it does not recognise, which is what a
+forgiving renderer does — produces a markdown file that looks finished and is
+quietly missing a paragraph. That is the same failure as a check that could not
+run reporting success, and it is worse here than an error, because the next
+reader believes the document. The first inventory of this page's escapes was
+taken with a regex that missed `\fB`, `\fR` and `\fP` entirely; the renderer's
+refusal is what surfaced them, which is the argument in miniature.
+
+### Two gates, because one of them cannot see the renderer being wrong
+
+`tests/test_man_page.py` compares the committed markdown against a fresh render
+byte for byte. That catches a stale file, a hand-edit, and a commit of the
+troff without the markdown. It cannot catch the renderer silently dropping
+content, because both sides of the comparison would then be missing it.
+
+So a second test reads the section headings out of the troff directly — not
+through the renderer — and looks for each one in the markdown. This was
+verified by mutation: with `_do_SS` made to return early and the markdown
+regenerated, the byte comparison passes and only the heading test fails
+(`docs/Development-Principles.md` §3a). The duplication of the `\-` expansion
+in that test is deliberate for the same reason; a check that shares the
+renderer's code cannot catch the renderer.
+
+Regeneration itself is a `pytest_sessionfinish` hook, the same arrangement as
+`.coverage-summary.md`, but without that file's staleness problem: the coverage
+summary declines to run under `--no-cov` because it would rewrite itself from a
+previous run's numbers, whereas this render's only input is the troff file, so
+it is correct on every run. The hook runs *after* the tests, which is the right
+order — a session that starts stale still goes red, and the file is correct for
+the next one.
+
+**Related issues:** #54, #57, #50

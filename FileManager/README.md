@@ -14,6 +14,7 @@ Part of [SystemUtils](../README.md). Standard-library Python only.
 |------|---------|
 | `README.md` (this file) | New-developer orientation — what it does, how to run it, how it works |
 | `CLAUDE.md` | Operational reference for Claude Code: commands, invariants, gotchas |
+| [`man/filemanager.md`](man/filemanager.md) | **The manual** — every action, option, exit code and output stream. Generated from `man/filemanager.1`; read it with `man -l man/filemanager.1` |
 | [`docs/Architecture+Design.md`](docs/Architecture+Design.md) | Design decision record — problem, decision, alternatives rejected |
 | [`docs/REQUIREMENTS.txt`](docs/REQUIREMENTS.txt) | The original 2024 specification, kept as written |
 | [`../docs/Development-Principles.md`](../docs/Development-Principles.md) | Repo-wide principles on building and sequencing work |
@@ -37,6 +38,10 @@ a float equality test.
 ---
 
 ## Running it
+
+The complete reference is the manual — `man -l man/filemanager.1`, or
+[`man/filemanager.md`](man/filemanager.md) to read it in a browser. What follows is
+the orientation version.
 
 All commands run from this directory.
 
@@ -237,14 +242,14 @@ Python 3.14.7 via the `sys-utils` pyenv-virtualenv, then
 `pip install -r requirements-dev.txt`.
 
 ```bash
-python -m pytest              # 359 tests; coverage on, floor enforced
+python -m pytest              # 369 tests; coverage on, floor enforced
 python -m pytest --no-cov -q  # faster while iterating
 python -m mypy src/           # must be clean
 ```
 
 ### Testing
 
-359 tests in 26 modules, no xfails. `pytest.ini` enables branch coverage, writes
+369 tests in 27 modules, no xfails. `pytest.ini` enables branch coverage, writes
 `coverage.xml` and `test-results.xml`, and fails under **99%** — the current real
 measurement is 99.71%, which meets the 95% `docs/REQUIREMENTS.txt` has asked for
 since 2024. **Nothing is excluded from measurement**: `src/gui.py` was the only

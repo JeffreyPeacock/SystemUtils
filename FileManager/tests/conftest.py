@@ -239,7 +239,7 @@ def run_cli(capsys, monkeypatch):
     return invoke
 
 
-def pytest_sessionfinish(session, exitstatus):
+def _write_coverage_summary(session):
     """Write .coverage-summary.md after every run that measured coverage.
 
     Two ways to decline, and both are needed. `--no-cov` measured nothing, so
@@ -281,3 +281,54 @@ def pytest_sessionfinish(session, exitstatus):
         print(f"\nCANNOT WRITE SUMMARY: {script} exited {result.returncode}\n{result.stderr}")
     elif result.stdout:
         print(result.stdout.rstrip())
+
+
+def _render_man_page():
+    """Regenerate man/filemanager.md from man/filemanager.1 after every run.
+
+    Same arrangement as the coverage summary -- a generated file that is
+    committed, so the rendered manual moves in a pull request diff alongside
+    the troff it came from -- but with none of the staleness problem that one
+    has. The coverage summary can be rewritten from a previous run's numbers,
+    which is why it declines on `--no-cov`. This render's only input is the
+    troff file itself, so it is correct on every run, including `--no-cov`.
+
+    `tests/test_man_page.py` is the gate and this is the convenience: the test
+    fails while the committed markdown disagrees with the troff, and this makes
+    that almost never happen, because editing the page and running the suite
+    leaves the markdown current. Note the order -- tests run BEFORE this hook,
+    so a session that starts stale still goes red, and the file is correct for
+    the next one.
+    """
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    script = os.path.join(root, "scripts", "render_man.py")
+    source = os.path.join(root, "man", "filemanager.1")
+
+    # Not a failure: the manual is one file, and a checkout without it is a
+    # checkout with nothing to render. Saying so beats silence either way.
+    for path in (script, source):
+        if not os.path.exists(path):
+            print(f"\nCANNOT RENDER MANUAL: {path} is missing")
+            return
+
+    import subprocess
+
+    result = subprocess.run(
+        [sys.executable, script, source],
+        cwd=root, capture_output=True, text=True,
+    )
+    if result.returncode != 0:
+        # Leave the old markdown in place and say why it was not replaced --
+        # the renderer refuses rather than writing a partial file.
+        print(f"\nCANNOT RENDER MANUAL: {script} exited "
+              f"{result.returncode}\n{result.stderr.rstrip()}")
+
+
+def pytest_sessionfinish(session, exitstatus):
+    """Regenerate both committed reports.
+
+    Each reports its own failure and neither stops the other: a missing
+    coverage.xml should not leave the manual unrendered.
+    """
+    _write_coverage_summary(session)
+    _render_man_page()
