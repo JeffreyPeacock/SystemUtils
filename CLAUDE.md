@@ -161,8 +161,8 @@ source of truth for every ID the slash commands use.
 
 ## Claude Code Skills
 
-Slash commands live in `.claude/commands/` at the repo root and are symlinked
-into each utility's `.claude/commands/`, so the root copy is the only one to edit.
+Slash commands live in `.claude/commands/` at the repo root, the only copy. Claude Code also finds
+them from a session started in a utility's directory, so a utility needs no copy or link.
 
 | Command | Description |
 |---------|-------------|

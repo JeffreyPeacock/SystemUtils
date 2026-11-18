@@ -1,1 +1,0 @@
-../../../.claude/commands/board-config.md

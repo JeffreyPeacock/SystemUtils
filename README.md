@@ -141,8 +141,8 @@ MIT — see [LICENSE](LICENSE).
 
 ## Claude Code
 
-Slash commands live in `.claude/commands/` at the repo root and are symlinked
-into each utility, so the root copy is the only one to edit:
+Slash commands live in `.claude/commands/` at the repo root, the only copy. A Claude Code
+session started in a utility's directory finds them there:
 `/new-issue`, `/fix-ticket`, `/fix-ready`, `/merge-pr`, `/priority-review`,
 `/create-plan`, `/prep-compaction`, `/trim-claude-md`, `/export-transcript`. Every GitHub identifier they use is
 collected in `.claude/commands/board-config.md`.

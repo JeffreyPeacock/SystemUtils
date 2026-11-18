@@ -1,1 +1,0 @@
-../../../.claude/commands/trim-claude-md.md

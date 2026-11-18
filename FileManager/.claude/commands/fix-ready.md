@@ -1,1 +1,0 @@
-../../../.claude/commands/fix-ready.md
