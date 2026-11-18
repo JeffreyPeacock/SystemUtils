@@ -13,6 +13,18 @@ For every bug fix or feature:
 3. **Monitor CI after PR** — check that all GitHub Actions pass. Report failures to the user before proceeding.
 4. **Return to main** — immediately after opening the PR, run `git checkout main` so the working tree is clean for the next task.
 
+**Step 1 is a convention, not a gate — nothing refuses a direct push.** `main` has no branch
+protection (`gh api repos/JeffreyPeacock/SystemUtils/branches/main/protection` returns 404), so the
+rule holds only as long as whoever is pushing remembers it, and a lapse is invisible afterwards. It
+has lapsed once already: `09ccfe5` put a new script, a new test module and a `tests/conftest.py`
+change straight on `main`. CI is not the gap — `.github/workflows/tests.yml` runs on `push: [main]`
+as well as `pull_request`, so the tests ran; what a direct commit skips is review. **#70** carries
+the decision of whether to enforce it and how, since a rule that simply requires a PR would also
+break the documentation-only path that `/merge-pr` step 10 and `/prep-compaction` step 5 depend on.
+
+Until that is decided, read **documentation-only strictly**: the exception covers a commit in which
+*every* file is documentation, not one that is mostly documentation.
+
 ## Repository layout
 
 This repository is a container for small, independent system utilities. Each is
