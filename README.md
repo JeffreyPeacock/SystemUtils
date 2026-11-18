@@ -73,7 +73,15 @@ git checkout main
 
 Branch prefixes: `file-manager/`, `ops/`, `feature/` (more than one utility),
 `chore/` (deps, CI, config), `docs/`. Documentation-only changes may go straight
-to `main`.
+to `main` — meaning a commit in which *every* file is documentation, not one
+that is mostly documentation.
+
+Nothing enforces that. `main` has no branch protection, so the branch-first rule
+holds only as long as whoever is pushing remembers it, and a lapse is invisible
+afterwards; it has lapsed once, on `09ccfe5`. CI is not the gap — the workflow
+runs on pushes to `main` as well as on pull requests, so the tests run either
+way. What a direct commit skips is review. Issue **#70** carries whether to
+enforce it and how.
 
 ### The pre-commit hook
 
@@ -103,7 +111,7 @@ tree rather than the staged snapshot; the reasoning is in the script header.
 Two numbers in this repo only ever move up, and the reasoning is in
 [Development-Principles §4](docs/Development-Principles.md):
 
-- **`FileManager/pytest.ini` → `--cov-fail-under`.** Currently `99`, against a measured 99.58%, having ratcheted 29 → 32 → 49 → 50 → 53 → 62 → 71 → 82 → 93 → 95 → 99 and never been lowered. **Nothing is excluded from measurement** as of #51: `src/gui.py` was the only omission and it left with the GUI. Re-adding one needs a recorded reason, a ticket, and an edit to the test that asserts the config omits nothing. `FileManager/docs/REQUIREMENTS.txt` asks for 95%. Raise the floor in the same PR that raises real coverage.
+- **`FileManager/pytest.ini` → `--cov-fail-under`.** Currently `99`, against a measured 99.71%, having ratcheted 29 → 32 → 49 → 50 → 53 → 62 → 71 → 82 → 93 → 95 → 99 and never been lowered. **Nothing is excluded from measurement** as of #51: `src/gui.py` was the only omission and it left with the GUI. Re-adding one needs a recorded reason, a ticket, and an edit to the test that asserts the config omits nothing. `FileManager/docs/REQUIREMENTS.txt` asks for 95%. Raise the floor in the same PR that raises real coverage.
 - **`FileManager/mypy.ini` → the per-module opt-out stanzas.** A module leaves the list by **passing** `check_untyped_defs`, never by the defaults being loosened. Re-test the list occasionally rather than assuming: `gui` and `main` left it without needing any annotation, because those stanzas had been guarding nothing. (`gui` has since left the project entirely with the GUI, #51.)
 
 Neither is lowered to make a red build green.
@@ -146,3 +154,9 @@ session started in a utility's directory finds them there:
 `/new-issue`, `/fix-ticket`, `/fix-ready`, `/merge-pr`, `/priority-review`,
 `/create-plan`, `/prep-compaction`, `/trim-claude-md`, `/export-transcript`. Every GitHub identifier they use is
 collected in `.claude/commands/board-config.md`.
+
+Permission rules are **not** tracked. `.claude/settings.json` was removed from
+the repository on 2026-11-17 because an allow-list is the owner's local choice;
+local rules live in `.claude/settings.local.json`, which `.gitignore` covers at
+any depth. A fresh clone therefore starts with no allows and prompts for
+everything, which is the intended default.
