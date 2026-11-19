@@ -106,7 +106,7 @@ rebuilds it in CI; its load-bearing assertion is that the archive holds no
 
 ## Testing
 
-**372 tests across 27 modules, all passing, no xfails.** Coverage is on by default
+**377 tests across 28 modules, all passing, no xfails.** Coverage is on by default
 via `pytest.ini` (`--cov=src --cov-branch`), writes `coverage.xml` and
 `test-results.xml`, and enforces `--cov-fail-under=99` against a measured
 **99.71%** combined line+branch coverage.
@@ -266,8 +266,14 @@ database and forces a full rehash of every recorded file.** Keep
 
 Threads are the only concurrency model. `scan_dir` uses a producer thread feeding
 a `Queue` consumed by `--threads` workers, terminated by one empty-string
-sentinel per worker. `audit_db` and `scan_and_report_unique_files` use
-`ThreadPoolExecutor` directly.
+sentinel per worker. That queue, and the one in `scan_dir_report`, is **bounded**
+at `SCAN_QUEUE_MAXSIZE` (#67): an 8 MiB budget divided by a measured 122 bytes
+per queued path, so 68,759 paths. The producer blocks when the workers fall
+behind. Before #67 the walk queued the whole tree on a baseline scan (~0.63 GiB
+for 5.58M files). The sentinel puts can block too, and still complete, because
+the workers keep draining until each has its sentinel -- tested with more
+workers than slots in `tests/test_scan_queue_bound.py`. `audit_db` and
+`scan_and_report_unique_files` use `ThreadPoolExecutor` directly.
 
 No connection is shared between threads, and none is reused: `with_connection`
 opens one, runs the callable it was given, and closes. It retries up to

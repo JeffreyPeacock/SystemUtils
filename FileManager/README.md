@@ -242,14 +242,14 @@ Python 3.14.7 via the `sys-utils` pyenv-virtualenv, then
 `pip install -r requirements-dev.txt`.
 
 ```bash
-python -m pytest              # 372 tests; coverage on, floor enforced
+python -m pytest              # 377 tests; coverage on, floor enforced
 python -m pytest --no-cov -q  # faster while iterating
 python -m mypy src/           # must be clean
 ```
 
 ### Testing
 
-372 tests in 27 modules, no xfails. `pytest.ini` enables branch coverage, writes
+377 tests in 28 modules, no xfails. `pytest.ini` enables branch coverage, writes
 `coverage.xml` and `test-results.xml`, and fails under **99%** — the current real
 measurement is 99.71%, which meets the 95% `docs/REQUIREMENTS.txt` has asked for
 since 2024. **Nothing is excluded from measurement**: `src/gui.py` was the only
@@ -297,10 +297,9 @@ filtered by `component:file-manager`. The GUI tickets #3 and #11 closed with
 #51, when the GUI left this project for one of its own (#53).
 
 Worth reading before running a baseline scan of a multi-million-file tree.
-None of these blocks such a run; all three were found while checking whether one
-was ready:
+Neither blocks such a run; both were found while checking whether one was
+ready:
 
-- **#67** — `scan`'s producer queue is unbounded. The producer walks metadata while the consumers hash, so on a first pass the walk gets ahead and the queue grows to roughly the full file count: ~122 bytes per path, so ~0.63 GiB for 5.58M files. Memory scales with the tree, not with the work.
 - **#68** — `verify-db` loads every recorded row before hashing anything: ~253 bytes per row. Use `--prefix` to bound a run until that is fixed.
 - **#69** — the database's parent directory must exist. Without it the run dies with a traceback and exits 1, which this tool's contract defines as an invalid argument.
 

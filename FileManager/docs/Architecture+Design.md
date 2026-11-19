@@ -912,3 +912,53 @@ index itself -- those fixtures run `git add`, and aiming them at the live index
 could have rewritten it.
 
 **Related issues:** #71, #62, #54
+
+---
+
+## The scan queue is bounded by a memory budget, expressed as a path count
+
+**The problem.** `scan_dir` and `scan_dir_report` walk the tree on a producer
+thread and hand paths to `--threads` workers through a `Queue`. The walk reads
+only metadata and the workers hash contents, so on a baseline scan, where every
+file is new, the producer is orders of magnitude faster. The queue was
+unbounded, so the producer queued the whole tree before the workers caught up:
+about 0.63 GiB of path strings for the 5.58M files on `/home2`. Memory followed
+the size of the tree rather than the amount of work in progress, and the
+failure was the OOM killer partway through a 20-hour run, which reports nothing.
+Exit 3 (#57) covers files that could not be read, not a process that was killed.
+
+**The decision.** Both queues take `maxsize=SCAN_QUEUE_MAXSIZE`, so `put()`
+blocks the producer when the workers fall behind. The owner set the bound as
+**8 MiB of memory**. A `Queue` limits items, not bytes, so the budget is
+converted with the measured cost of one queued path: 122 bytes for a
+67-character path, counting the `str` and its deque slot. That gives 68,759
+paths, and a full queue of such paths measured 7.63 MiB. The constants are
+`SCAN_QUEUE_MEMORY_BYTES` and `BYTES_PER_QUEUED_PATH` in `src/file_ops.py`, and
+`reporting` imports the result, so the two scans cannot disagree.
+
+**What was ruled out.**
+
+- *A fixed count of a few thousand* (the first version of the PR, 4096 paths,
+  about 0.5 MiB). It worked, but the number did not state what it was for. A
+  budget in bytes does.
+- *A true byte limit.* Exact accounting needs a `Queue` subclass that tracks the
+  size of what it holds and blocks on bytes. A long path costs about one byte
+  more per character, so a tree of very long paths can go past 8 MiB, but the
+  error is bounded by path length, not by tree size, which is the property
+  that mattered. The extra machinery was not worth it.
+
+**Shutdown with a bounded queue.** The sentinel ordering is unchanged: the
+producer puts one sentinel per worker after the last path. Those puts can block
+on a full queue, and they complete because the workers keep draining until each
+has taken its sentinel. `tests/test_scan_queue_bound.py` runs eight workers
+against four slots to prove it, with the `timeout = 60` in `pytest.ini`
+unchanged. The tests hold the workers on a gate and check the largest `qsize()`
+seen. With the bound removed that check alone failed (41 and 48 against a bound
+of 4), so it is known to fire.
+
+**Not fixed here.** If the producer raises before its sentinels, the workers
+wait forever. Putting the sentinels in `finally` alone would turn that hang into
+a partial index reported as complete, so the fix also needs the failure
+recorded in the results. Filed as #75.
+
+**Related issues:** #67, #43, #57, #75
