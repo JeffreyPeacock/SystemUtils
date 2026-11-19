@@ -16,6 +16,28 @@ from src.md5sum import compute_md5
 # counts under its own error list.
 MAX_FAILURES_LISTED = 20
 
+# The most paths a scan's producer may hold queued ahead of its consumers (#67).
+# The producer only reads metadata and the consumers hash contents, so on a
+# baseline scan an unbounded queue grew to the whole tree -- about 0.63 GiB of
+# path strings for 5.58M files -- before the first worker caught up. With a
+# bound, `put()` blocks the producer instead, and memory follows the number of
+# workers rather than the size of the tree.
+#
+# The bound is a memory budget, converted to a path count. A Queue limits
+# items, not bytes, so the conversion uses the measured cost of one queued
+# path: 122 bytes for a 67-character path, counting the str object and its
+# deque slot (#67). A longer path costs about one byte more per character, so
+# a tree of very long paths can go somewhat past the budget; it is a size to
+# aim at, not a hard ceiling.
+#
+# Shutdown still works with the bound in place: the producer puts its one
+# sentinel per worker after the last path, and the workers keep draining the
+# queue until each has taken its sentinel, so those puts can block but always
+# complete -- including when there are more workers than slots.
+SCAN_QUEUE_MEMORY_BYTES = 8 * 1024 * 1024
+BYTES_PER_QUEUED_PATH = 122
+SCAN_QUEUE_MAXSIZE = SCAN_QUEUE_MEMORY_BYTES // BYTES_PER_QUEUED_PATH  # 68,759
+
 
 class ScanTally:
     """What a scan did, and what it could not do.
@@ -113,7 +135,7 @@ def scan_file(path, db_path, tally=None):
 
 def scan_dir(path, db_path, num_threads, tally=None):
     tally = tally if tally is not None else ScanTally()
-    file_queue = Queue()
+    file_queue = Queue(maxsize=SCAN_QUEUE_MAXSIZE)
 
     def producer():
         for root, _, files in os.walk(path):
