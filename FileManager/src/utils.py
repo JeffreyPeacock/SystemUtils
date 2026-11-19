@@ -1,6 +1,8 @@
+import logging
 import os
 
 from src.md5sum import compute_md5
+from src.regular_files import SkippedEntries, walk_regular_files
 
 
 def get_file_mtime_in_ms(file_path):
@@ -16,12 +18,18 @@ def get_file_mtime_in_ms(file_path):
     return int(os.path.getmtime(file_path) * 1000)
 
 def get_files_with_md5(directory):
-    """Get a dictionary of files and their MD5 checksums in a directory."""
+    """Map every regular file under `directory` to its MD5 checksum.
+
+    Anything else -- a symlink, a device, a FIFO, a socket -- is not read, and
+    is logged and counted instead (#74).
+    """
     files_md5 = {}
-    for root, _, files in os.walk(directory):
-        for file in files:
-            file_path = os.path.join(root, file)
-            files_md5[file_path] = compute_md5(file_path)
+    skipped = SkippedEntries()
+    for file_path in walk_regular_files(directory, skipped):
+        files_md5[file_path] = compute_md5(file_path)
+    not_regular = skipped.summary_line()
+    if not_regular:
+        logging.warning(f"{directory}: {not_regular}")
     return files_md5
 
 

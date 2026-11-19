@@ -106,7 +106,7 @@ rebuilds it in CI; its load-bearing assertion is that the archive holds no
 
 ## Testing
 
-**377 tests across 28 modules, all passing, no xfails.** Coverage is on by default
+**416 tests across 29 modules, all passing, no xfails.** Coverage is on by default
 via `pytest.ini` (`--cov=src --cov-branch`), writes `coverage.xml` and
 `test-results.xml`, and enforces `--cov-fail-under=99` against a measured
 **99.71%** combined line+branch coverage.
@@ -219,6 +219,7 @@ beyond argument validation. Below it is a flat module layer, no classes:
 - `src/file_ops.py` — directory walking and the decision of whether a file needs hashing. `process_file` is the core routine. Also `verify_db` and `VerifyTally` (#50): the orchestration lives here because it is a decision about hashing, while its one bulk query, `db.recorded_checksums`, lives in `db.py` with every other statement.
 - `src/reporting.py` — formats and prints; every query it runs is a `db.py` function (#10). It must not import `sqlite3`, and `tests/test_db_owns_the_connection.py` fails if it does.
 - `src/version.py`, `src/build_info.py` — what `--version` prints. `build_info.py` is **data only**, because the build overwrites it; every line of logic and the live-git fallback are in `version.py` (#62).
+- `src/regular_files.py` — **the one definition of which files are read** (#74): `walk_regular_files`, `require_regular_file`, `NotARegularFile`, and `SkippedEntries`, the per-kind count. Every walk and every hash goes through it.
 - `src/md5sum.py`, `src/utils.py` — `compute_md5` (4 KB chunks), `get_file_mtime_in_ms`,
   and `report_settings`, which prints each setting's name, value and origin before a
   destructive run and refuses a credential-shaped name outright
@@ -293,6 +294,8 @@ Entries change only when the behaviour does — four went on 2026-09-04 with
 #1, #2, #4 and #5, and the `--min-duplicates` and `remove_record` entries were
 rewritten the same day when #6 and #7 landed.
 
+- **Only regular files are read or recorded, and a symlink is never followed** (#74). Every walk goes through `walk_regular_files`, which uses `lstat` and counts everything else by kind, including a symlink to a directory that `os.walk` would otherwise drop without a word. `scan` prints `skipped N not regular file(s), not read: ...` as a second summary line; a skip **does not** change the exit status, but a non-regular path named on the command line is a failure (exit 3). Three layers, each with a test that fails without it: the walk, a check at the top of `process_file` (before the skip check, or an old symlink row matching its stored (size, mtime) would report `skipped`), and `compute_md5`, which checks up front, opens with `O_NOFOLLOW | O_NONBLOCK`, and re-checks the descriptor with `fstat` — so a path replaced by a FIFO after the check cannot block the `open()`. Before this, a copied `/dev/random` in a backed-up postfix chroot kept a worker reading for 36 hours.
+- **`audit-db` removes rows that are not regular files, and an `lstat` error is a failure, not a deletion** (#74). Such rows (`not regular` in the summary) were left by versions that followed symlinks. The audit used `os.path.exists`, which returns False for *any* error — so a row under a directory the auditor could not search was removed as deleted. Now only `FileNotFoundError`/`NotADirectoryError` count as missing; anything else is counted as failed, the row is kept, and the audit exits 3. `verify-db` never writes, so it reports such a row as unreadable and names `audit-db`.
 - **`--use-gui` no longer exists, and passing it is a hard failure.** The GUI left this project in #51, so `report-duplicates --use-gui` is an argparse rejection — exit code 2, no report produced. Any wrapper, cron entry or shell history carrying the flag stops working rather than quietly ignoring it, which is the intended direction: a scan that silently dropped the flag would look like it had run normally. The replacement is a separate application (#53).
 - **`--min-duplicates` counts copies, and its default is 2.** `find_duplicates_with_min_count` compares with `>=`, so 2 means "a file and at least one other like it". Until #6 the comparison was `>` with a default of 1: the same output, reached by an argument that meant one less than it said, so `--min-duplicates 3` returned groups of four.
 - **Record removal is two functions in `db.py`, named apart.** `remove_record_by_path` takes one exact path; `remove_records_by_regex` takes a pattern matched against the whole path. Until #7 both were called `remove_record`, in different modules, with opposite behaviour. `tests/test_removal_function_names.py` fails if any module under `src/` reintroduces the bare name.

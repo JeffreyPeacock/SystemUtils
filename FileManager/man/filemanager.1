@@ -11,7 +11,7 @@
 .\" src/main.py, not from the source comments. When the CLI changes, change
 .\" this page in the same commit -- a manual page that disagrees with the
 .\" program is worse than no manual page, because it is believed.
-.TH FILEMANAGER 1 2026-11-17 SystemUtils "FileManager Manual"
+.TH FILEMANAGER 1 2026-11-19 SystemUtils "FileManager Manual"
 .
 .SH NAME
 filemanager \- index files by MD5 checksum and report duplicates across filesystems
@@ -38,8 +38,8 @@ filemanager \- index files by MD5 checksum and report duplicates across filesyst
 .
 .SH DESCRIPTION
 .B filemanager
-walks one or more directory trees, computes an MD5 checksum for every file it
-finds, and records
+walks one or more directory trees, computes an MD5 checksum for every regular
+file it finds, and records
 .RI ( md5sum ", " size ", " last_modified ", " path )
 in a SQLite database.
 The database is then queried to find files whose contents are identical,
@@ -51,6 +51,21 @@ A wrong answer therefore has consequences past this process, and the program is
 built around that: a question it cannot answer is reported as unanswered rather
 than guessed, and an action that completed only partly says so in its exit
 status.
+.PP
+.B Only regular files are read or recorded, and a symlink is never followed.
+Every other entry \(em a symlink, whatever it points at; a character or block
+device; a FIFO; a socket \(em is skipped without being opened, logged as
+.RB ` "NOT REGULAR (\fIkind\fP), skipped: \fIpath\fP" ',
+and counted by kind for the run's summary.
+A skip is not a failure, because nothing that belongs in the index was missed.
+A copy of
+.I /dev/random
+never reaches end of file and a FIFO blocks the
+.BR open (2)
+until a writer appears, so reading either one made a scan never finish.
+A root backup made with
+.RB ` "rsync \-a" '
+recreates both, so any backup volume can hold them (#74).
 .
 .SS The skip check
 Rescanning a large tree is cheap because
@@ -127,18 +142,27 @@ also require
 .TP
 .BI scan " path\fR[\fP,path...\fR]\fP"
 Walk each directory or file in the comma-separated list and record a checksum
-for every file, honouring the skip check.
+for every regular file, honouring the skip check.
 All paths share one tally, because the caller asked for one scan and so gets one
 answer about whether it was complete.
 Prints
 .RB ` "scan complete: N hashed, N skipped unchanged, N failed" '
 and then every failed path.
-.B Exits 3 if anything failed.
-A listed path that is neither a file nor a directory counts as a failure.
+When anything was skipped because it is not a regular file, a second line
+follows:
+.RB ` "skipped N not regular file(s), not read: fifo N, symlink N" ',
+with one count per kind.
+.B Exits 3 if anything failed;
+a skipped entry does not count.
+A listed path that is neither a regular file nor a directory counts as a
+failure, and a symlink named on the command line is not followed.
 .TP
 .BI check\-file " path"
 Hash one file and print any recorded paths holding the same checksum.
 Does not record anything.
+Exits 1 if
+.I path
+is not a regular file.
 .TP
 .BI scan\-dir\-report " path"
 Scan one directory and report the duplicates found within it in the same run.
@@ -166,6 +190,14 @@ and
 removed, because that is what an unmounted volume looks like \(em
 .B \-\-prune\-missing\-dirs
 removes them deliberately.
+A row whose path is no longer a regular file \(em a symlink recorded by a
+version before #74, for example \(em is removed too, under the same
+.BR \-\-dry\-run ,
+and counted as
+.BR "not regular" .
+Only a path that does not exist counts as missing.
+A path that cannot be examined, such as one under a directory the auditor
+cannot search, counts as a failure and its row is kept.
 Prints its settings and their origins before doing anything, then
 .RB ` "audit complete: ..." '.
 .B Exits 3 if anything failed.
@@ -188,6 +220,10 @@ Three outcomes, never two \(em matched, mismatched, could not read \(em and an
 unreadable file is
 .B not
 a pass.
+A recorded path that is not a regular file is not opened, and is reported as
+unreadable;
+.B audit\-db
+removes such rows.
 Scope a long run with
 .BR \-\-prefix ;
 verifying millions of recorded files takes hours.
@@ -647,14 +683,14 @@ which checksums metadata only, an application-level verify is the only thing
 that will notice a file whose contents changed without its mtime.
 .
 .SS Memory
-Both figures below are linear in the size of the job and neither is bounded; see
-.BR BUGS .
 .B scan
-holds the queued file paths in memory, on the order of 0.6\ GiB for 5.6\ million
-files.
+holds at most 68,759 queued file paths in memory, about 8\ MiB for paths of
+67 characters; the walk waits when the hashing workers fall behind (#67).
+Longer paths cost about one byte more per character.
 .B verify\-db
-materialises every row it will check before it starts, on the order of
-1.3\ GiB for a tree of that size.
+is not bounded: it materialises every row it will check before it starts, on the order of
+1.3\ GiB for 5.6\ million rows; see
+.BR BUGS .
 .
 .SS Database placement
 Keep the database off the trees being scanned, and on an SSD if there is one.
@@ -667,10 +703,6 @@ Known and open, with the issue numbers in
 .UR https://github.com/users/JeffreyPeacock/projects/14
 the SystemUtils board
 .UE :
-.TP
-.B Unbounded scan queue (#67)
-The producer thread enqueues paths as fast as it can walk, so a tree larger than
-memory allows will be held in memory anyway.
 .TP
 .B verify\-db materialises every row (#68)
 The recorded paths are read into a list before any hashing starts, rather than

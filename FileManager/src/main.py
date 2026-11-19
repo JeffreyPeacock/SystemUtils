@@ -278,7 +278,7 @@ def _print_audit_summary(counts: AuditCounts) -> None:
         f"audit complete: checked {counts['checked']}, "
         f"removed {counts['removed']}, reprocessed {counts['reprocessed']}, "
         f"skipped {counts['skipped']}, suspect {counts['suspect']}, "
-        f"failed {counts['failed']}"
+        f"not regular {counts['not_regular']}, failed {counts['failed']}"
     )
     failures = counts.get('failures') or []
     if failures:
@@ -435,7 +435,9 @@ def main():
         if tally.failed:
             return EXIT_INCOMPLETE
     elif args.action == 'check-file':
-        check_file(args.path, db_path)
+        # A path that is not a regular file is an invalid argument (#74).
+        if not check_file(args.path, db_path):
+            return 1
     elif args.action == 'scan-dir-report':
         scan_dir_report(args.path, db_path, args.threads)
     elif args.action == 'report-duplicates':

@@ -5,7 +5,7 @@
 > Edit the troff source and regenerate; `tests/test_man_page.py`
 > fails while this file disagrees with it.
 
-*FileManager Manual · SystemUtils · 2026-11-17*
+*FileManager Manual · SystemUtils · 2026-11-19*
 
 ## NAME
 
@@ -23,15 +23,24 @@ filemanager action [path] [--db-path path] [--threads n] [--prefix prefix]
 ## DESCRIPTION
 
 **filemanager** walks one or more directory trees, computes an MD5 checksum for every
-file it finds, and records (*md5sum*, *size*, *last_modified*, *path*) in a SQLite
-database. The database is then queried to find files whose contents are identical,
-including across separate filesystems and mount points, which is what duplicate finders
-scoped to a single tree cannot do.
+regular file it finds, and records (*md5sum*, *size*, *last_modified*, *path*) in a
+SQLite database. The database is then queried to find files whose contents are
+identical, including across separate filesystems and mount points, which is what
+duplicate finders scoped to a single tree cannot do.
 
 Its output is a list of files a human may then delete. A wrong answer therefore has
 consequences past this process, and the program is built around that: a question it
 cannot answer is reported as unanswered rather than guessed, and an action that
 completed only partly says so in its exit status.
+
+**Only regular files are read or recorded, and a symlink is never followed.** Every
+other entry — a symlink, whatever it points at; a character or block device; a FIFO; a
+socket — is skipped without being opened, logged as `NOT REGULAR (kind), skipped: path`,
+and counted by kind for the run's summary. A skip is not a failure, because nothing that
+belongs in the index was missed. A copy of */dev/random* never reaches end of file and a
+FIFO blocks the **open**(2) until a writer appears, so reading either one made a scan
+never finish. A root backup made with `rsync -a` recreates both, so any backup volume
+can hold them (#74).
 
 ### The skip check
 
@@ -78,16 +87,19 @@ require *path*.
 - **scan** *path*\[*,path...*\]
 
   Walk each directory or file in the comma-separated list and record a checksum for
-  every file, honouring the skip check. All paths share one tally, because the caller
-  asked for one scan and so gets one answer about whether it was complete. Prints `scan
-  complete: N hashed, N skipped unchanged, N failed` and then every failed path. **Exits
-  3 if anything failed.** A listed path that is neither a file nor a directory counts as
-  a failure.
+  every regular file, honouring the skip check. All paths share one tally, because the
+  caller asked for one scan and so gets one answer about whether it was complete. Prints
+  `scan complete: N hashed, N skipped unchanged, N failed` and then every failed path.
+  When anything was skipped because it is not a regular file, a second line follows:
+  `skipped N not regular file(s), not read: fifo N, symlink N`, with one count per kind.
+  **Exits 3 if anything failed;** a skipped entry does not count. A listed path that is
+  neither a regular file nor a directory counts as a failure, and a symlink named on the
+  command line is not followed.
 
 - **check-file** *path*
 
   Hash one file and print any recorded paths holding the same checksum. Does not record
-  anything.
+  anything. Exits 1 if *path* is not a regular file.
 
 - **scan-dir-report** *path*
 
@@ -106,10 +118,15 @@ require *path*.
   whose (*size*, *mtime*) changed. **This action deletes rows; run it with --dry-run
   first.** Rows whose parent directory is also missing are reported as **SUSPECT** and
   **not** removed, because that is what an unmounted volume looks like —
-  **--prune-missing-dirs** removes them deliberately. Prints its settings and their
-  origins before doing anything, then `audit complete: ...`. **Exits 3 if anything
-  failed.** This is the only action that sets `PRAGMA journal_mode=WAL`, so a database
-  that has never been audited is still in rollback-journal mode.
+  **--prune-missing-dirs** removes them deliberately. A row whose path is no longer a
+  regular file — a symlink recorded by a version before #74, for example — is removed
+  too, under the same **--dry-run**, and counted as **not regular**. Only a path that
+  does not exist counts as missing. A path that cannot be examined, such as one under a
+  directory the auditor cannot search, counts as a failure and its row is kept. Prints
+  its settings and their origins before doing anything, then `audit complete: ...`.
+  **Exits 3 if anything failed.** This is the only action that sets `PRAGMA
+  journal_mode=WAL`, so a database that has never been audited is still in
+  rollback-journal mode.
 
 - **verify-db**
 
@@ -119,8 +136,10 @@ require *path*.
   the database:** a verify that repaired the baseline on a mismatch would destroy the
   only evidence of corruption and would pass on its second run. Three outcomes, never
   two — matched, mismatched, could not read — and an unreadable file is **not** a pass.
-  Scope a long run with **--prefix**; verifying millions of recorded files takes hours.
-  **Exits 4 on a mismatch, 3 on an unreadable file,** and 4 wins when both occur.
+  A recorded path that is not a regular file is not opened, and is reported as
+  unreadable; **audit-db** removes such rows. Scope a long run with **--prefix**;
+  verifying millions of recorded files takes hours. **Exits 4 on a mismatch, 3 on an
+  unreadable file,** and 4 wins when both occur.
 
 - **report-duplicate-sizes**
 
@@ -461,10 +480,11 @@ contents changed without its mtime.
 
 ### Memory
 
-Both figures below are linear in the size of the job and neither is bounded; see
-**BUGS**. **scan** holds the queued file paths in memory, on the order of 0.6 GiB for
-5.6 million files. **verify-db** materialises every row it will check before it starts,
-on the order of 1.3 GiB for a tree of that size.
+**scan** holds at most 68,759 queued file paths in memory, about 8 MiB for paths of 67
+characters; the walk waits when the hashing workers fall behind (#67). Longer paths cost
+about one byte more per character. **verify-db** is not bounded: it materialises every
+row it will check before it starts, on the order of 1.3 GiB for 5.6 million rows; see
+**BUGS**.
 
 ### Database placement
 
@@ -477,11 +497,6 @@ additionally makes it an input to the next walk.
 
 Known and open, with the issue numbers in [the SystemUtils
 board](https://github.com/users/JeffreyPeacock/projects/14):
-
-- **Unbounded scan queue (#67)**
-
-  The producer thread enqueues paths as fast as it can walk, so a tree larger than
-  memory allows will be held in memory anyway.
 
 - **verify-db materialises every row (#68)**
 

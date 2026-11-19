@@ -429,7 +429,7 @@ def test_a_long_audit_failure_list_is_truncated(capsys):
     from src import main as main_module
 
     counts = {'checked': 30, 'removed': 0, 'reprocessed': 0, 'skipped': 0,
-              'suspect': 0, 'failed': 25,
+              'suspect': 0, 'not_regular': 0, 'failed': 25,
               'failures': [(f"/path/{i}", "Permission denied") for i in range(25)]}
 
     main_module._print_audit_summary(counts)

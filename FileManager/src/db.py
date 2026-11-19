@@ -3,11 +3,16 @@ import logging
 import os
 import re
 import sqlite3
+import stat
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import TypedDict
 
 from src.md5sum import compute_md5
+from src.regular_files import (
+    NotARegularFile, SkippedEntries, file_kind, require_regular_file,
+    walk_regular_files,
+)
 from src.utils import get_file_mtime_in_ms
 
 MAX_RETRIES = 10  # Define a global variable for the number of retries
@@ -489,6 +494,7 @@ class AuditCounts(TypedDict):
     reprocessed: int
     skipped: int
     suspect: int
+    not_regular: int
     failed: int
     failures: list[tuple[str, str]]
 
@@ -509,8 +515,10 @@ def audit_db(db_path, num_threads, process_file, exclude_prefix=None,
 
     Returns:
         AuditCounts: counts keyed 'removed', 'reprocessed', 'skipped',
-            'suspect', 'checked', 'failed', plus 'failures' as a list of
-            (path, message).
+            'suspect', 'not_regular', 'checked', 'failed', plus 'failures' as
+            a list of (path, message). 'not_regular' counts rows removed
+            because the path is no longer a regular file (#74); they are not
+            also counted in 'removed'.
             On a dry run 'removed' and 'reprocessed' are what *would* have
             happened. **The caller must read 'failed'** -- an audit that could
             not read part of the tree returns normally, and turning that into an
@@ -525,8 +533,8 @@ def audit_db(db_path, num_threads, process_file, exclude_prefix=None,
     # check_untyped_defs opt-out list, which is how an opt-out comes to hide a
     # new fault instead of a known one (#60, #61).
     counts: AuditCounts = {'removed': 0, 'reprocessed': 0, 'skipped': 0,
-                           'suspect': 0, 'checked': 0, 'failed': 0,
-                           'failures': []}
+                           'suspect': 0, 'not_regular': 0, 'checked': 0,
+                           'failed': 0, 'failures': []}
     suspect_paths = []
     failures: list[tuple[str, str]] = []
 
@@ -541,7 +549,30 @@ def audit_db(db_path, num_threads, process_file, exclude_prefix=None,
             counts['skipped'] += 1
             return
 
-        if not os.path.exists(file_path):
+        # lstat, not os.path.exists (#74). exists() follows a symlink, so a
+        # recorded symlink looked like the file it pointed at. It also returns
+        # False for *any* error -- a directory the auditor cannot search
+        # included -- so a row for a file that is still there was removed as
+        # deleted. Only "no such path" counts as missing now; any other error
+        # propagates and is counted as a failure, and the row is kept.
+        try:
+            mode = os.lstat(file_path).st_mode
+        except (FileNotFoundError, NotADirectoryError):
+            mode = None
+
+        if mode is not None and not stat.S_ISREG(mode):
+            # Only regular files belong in the database. Such a row was made
+            # by a version that followed symlinks, or the path has since been
+            # replaced. It is removed like a deleted file, with the same
+            # --dry-run guard, and counted separately.
+            kind = file_kind(mode)
+            counts['not_regular'] += 1
+            if dry_run:
+                logging.info(f"WOULD REMOVE: {file_path} (not a regular file: {kind})")
+            else:
+                logging.info(f"REMOVED: {file_path} (not a regular file: {kind})")
+                remove_record_by_path(db_path, file_path)
+        elif mode is None:
             if looks_like_a_missing_volume(file_path) and not prune_missing_dirs:
                 logging.warning(
                     f"SUSPECT: {file_path} (its directory is missing too -- "
@@ -602,7 +633,7 @@ def audit_db(db_path, num_threads, process_file, exclude_prefix=None,
         f"AUDIT {'(dry run) ' if dry_run else ''}checked {counts['checked']}: "
         f"{verb} {counts['removed']}, reprocessed {counts['reprocessed']}, "
         f"skipped {counts['skipped']}, suspect {counts['suspect']}, "
-        f"failed {counts['failed']}"
+        f"not regular {counts['not_regular']}, failed {counts['failed']}"
     )
     counts['failures'] = failures
     if suspect_paths:
@@ -675,12 +706,9 @@ def scan_and_report_unique_files(directory, db_path, num_threads=4):
             return None, None
         return file_path, STATUS_UNIQUE if is_unique else STATUS_NOT_UNIQUE
 
-    # Collect all file paths
-    file_paths = [
-        os.path.join(root, file)
-        for root, _, files in os.walk(directory)
-        for file in files
-    ]
+    # Collect every regular file; anything else is logged and counted (#74).
+    skipped = SkippedEntries()
+    file_paths = list(walk_regular_files(directory, skipped))
 
     # Process files using ThreadPoolExecutor
     with ThreadPoolExecutor(max_workers=num_threads) as executor:
@@ -703,6 +731,9 @@ def scan_and_report_unique_files(directory, db_path, num_threads=4):
 
     print()  # Move to the next line after processing
     logging.info(f"Unique files found: {len(unique_files)}")
+    not_regular = skipped.summary_line()
+    if not_regular:
+        logging.warning(f"{not_regular} -- in neither list")
     if unreadable_files:
         # Said out loud, because the answer for these files is "we do not know"
         # and the caller is about to treat the returned list as complete.
@@ -732,12 +763,15 @@ def is_file_unique(file_path, db_path):
             does.
 
     Raises:
-        ValueError: if `file_path` is not a file.
+        ValueError: if `file_path` is not a regular file, or cannot be
+            examined. A symlink is not followed (#74).
         UniquenessUnknown: if the checksum or the lookup failed, so neither
             answer is available. Never returns False for this case -- see #41.
     """
-    if not os.path.isfile(file_path):
-        raise ValueError(f"Invalid file path: {file_path}")
+    try:
+        require_regular_file(file_path)
+    except (NotARegularFile, OSError) as e:
+        raise ValueError(f"Invalid file path: {file_path} ({e})") from e
 
     try:
         md5sum = compute_md5(file_path)

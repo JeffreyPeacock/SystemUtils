@@ -1,5 +1,6 @@
 import logging
 import os
+import stat
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -9,6 +10,10 @@ from src.db import (
     store_file_info, check_for_duplicates, get_file_info, recorded_checksums,
 )
 from src.md5sum import compute_md5
+from src.regular_files import (
+    NotARegularFile, SkippedEntries, file_kind, require_regular_file,
+    walk_regular_files,
+)
 
 # How many failed paths a summary prints before it gives a count instead. Every
 # failure is logged individually regardless; this bounds only the final block,
@@ -58,6 +63,10 @@ class ScanTally:
         self.skipped = 0
         self.failed = 0
         self.failures = []
+        # Entries that are not regular files: skipped, logged and counted by
+        # kind (#74). Not a failure -- nothing that belongs in the index was
+        # missed -- so they do not change the exit status.
+        self.not_regular = SkippedEntries()
 
     def record_hashed(self):
         with self._lock:
@@ -72,6 +81,9 @@ class ScanTally:
         with self._lock:
             self.failed += 1
             self.failures.append((path, str(error)))
+
+    def record_not_regular(self, path, kind):
+        self.not_regular.record(path, kind)
 
     def record_outcome(self, outcome):
         if outcome == 'skipped':
@@ -89,6 +101,9 @@ class ScanTally:
             f"scan complete: {self.hashed} hashed, "
             f"{self.skipped} skipped unchanged, {self.failed} failed"
         ]
+        not_regular = self.not_regular.summary_line()
+        if not_regular:
+            lines.append(not_regular)
         if self.failed:
             shown = self.failures[:MAX_FAILURES_LISTED]
             lines.append(f"failed ({self.failed}):")
@@ -111,26 +126,45 @@ def scan(path, db_path, num_threads, tally=None):
             returns normally, and the exit status is the caller's job (#57).
     """
     tally = tally if tally is not None else ScanTally()
-    if os.path.isdir(path):
+    # lstat, not isdir/isfile: those follow a symlink, and a symlink is never
+    # followed (#74) -- not even one named on the command line.
+    try:
+        mode = os.lstat(path).st_mode
+    except OSError:
+        mode = None
+    if mode is not None and stat.S_ISDIR(mode):
         scan_dir(path, db_path, num_threads, tally)
-    elif os.path.isfile(path):
+    elif mode is not None and stat.S_ISREG(mode):
         scan_file(path, db_path, tally)
-    else:
+    elif mode is None:
         # Not a warning. A path given on the command line that is neither a
         # file nor a directory means the scan did not cover what it was asked
         # to cover, which is the same kind of gap as an unreadable file.
         logging.error(f"Invalid path: {path}")
         tally.record_failure(path, "not a file or directory")
+    else:
+        # A failure, not a skip, for the same reason: the operator named this
+        # path, and the scan did not cover it.
+        kind = file_kind(mode)
+        logging.error(f"Not scanned: {path} is a {kind}, not a regular file or directory")
+        tally.record_failure(path, f"not a regular file or directory ({kind})")
     return tally
+
+
+def _scan_one(file_path, db_path, tally):
+    """Scan one path into `tally`: hashed, skipped, not regular, or failed."""
+    try:
+        tally.record_outcome(process_file(file_path, db_path))
+    except NotARegularFile as e:
+        tally.record_not_regular(e.path, e.kind)
+    except Exception as e:
+        logging.error(f"Error processing file {file_path}: {e}")
+        tally.record_failure(file_path, e)
 
 
 def scan_file(path, db_path, tally=None):
     tally = tally if tally is not None else ScanTally()
-    try:
-        tally.record_outcome(process_file(path, db_path))
-    except Exception as e:
-        logging.error(f"Error processing file {path}: {e}")
-        tally.record_failure(path, e)
+    _scan_one(path, db_path, tally)
     return tally
 
 def scan_dir(path, db_path, num_threads, tally=None):
@@ -138,10 +172,11 @@ def scan_dir(path, db_path, num_threads, tally=None):
     file_queue = Queue(maxsize=SCAN_QUEUE_MAXSIZE)
 
     def producer():
-        for root, _, files in os.walk(path):
-            for file in files:
-                file_queue.put(os.path.join(root, file))
-                logging.debug(f"Found file: {os.path.join(root, file)}")
+        # Only regular files reach the queue; every other entry is counted
+        # into the tally by the walk itself (#74).
+        for file_path in walk_regular_files(path, tally.not_regular):
+            file_queue.put(file_path)
+            logging.debug(f"Found file: {file_path}")
         for _ in range(num_threads):
             file_queue.put("")  # Signal the consumers to stop
 
@@ -154,10 +189,7 @@ def scan_dir(path, db_path, num_threads, tally=None):
                 # DO NOT DO THIS:  file_queue.put("")  # Signal the next consumer to stop
                 break
             try:
-                tally.record_outcome(process_file(file_path, db_path))
-            except Exception as e:
-                logging.error(f"Error processing file {file_path}: {e}")
-                tally.record_failure(file_path, e)
+                _scan_one(file_path, db_path, tally)
             finally:
                 file_queue.task_done()
 
@@ -176,6 +208,14 @@ def scan_dir(path, db_path, num_threads, tally=None):
 
 
 def process_file(file_path, db_path):
+    """Record one regular file, hashing it only if (size, mtime) changed.
+
+    Raises `NotARegularFile` for anything else (#74). The check comes first,
+    before the skip check: a symlink recorded by an older version would
+    otherwise match its stored (size, mtime) through the link and be reported
+    as 'skipped' rather than refused.
+    """
+    require_regular_file(file_path)
     size = os.path.getsize(file_path)
     last_modified = int(os.path.getmtime(file_path) * 1000)  # Multiply by 1000 and convert to integer
     file_info = get_file_info(db_path, file_path)
@@ -206,6 +246,8 @@ def process_files_concurrently(file_paths, db_path, num_threads, tally=None):
             file_path = futures[future]
             try:
                 tally.record_outcome(future.result())
+            except NotARegularFile as e:
+                tally.record_not_regular(e.path, e.kind)
             except Exception as e:
                 logging.error(f"Error processing file {file_path}: {e}")
                 tally.record_failure(file_path, e)
@@ -213,7 +255,17 @@ def process_files_concurrently(file_paths, db_path, num_threads, tally=None):
 
 
 def check_file(path, db_path):
-    md5sum = compute_md5(path)
+    """Print every recorded path sharing `path`'s checksum.
+
+    Returns:
+        bool: False if `path` is not a regular file and was not read (#74),
+            True otherwise.
+    """
+    try:
+        md5sum = compute_md5(path)
+    except NotARegularFile as e:
+        logging.error(f"Not checked: {e}")
+        return False
     duplicates = check_for_duplicates(db_path, md5sum)
     if duplicates:
         logging.info(f"Duplicate found for {path}")
@@ -221,6 +273,7 @@ def check_file(path, db_path):
         for duplicate in duplicates:
             print(duplicate[0])
             logging.info(f"Duplicate: {duplicate[0]}")
+    return True
 
 
 # Record removal lives in src/db.py: `remove_record_by_path` for one exact path,
@@ -310,6 +363,14 @@ def verify_one_recording(path, stored_md5, tally):
     """
     try:
         actual = compute_md5(path)
+    except NotARegularFile as e:
+        # Never opened. The row should not be in the database at all (#74), but
+        # verify never writes, so it is reported as not verified -- which is
+        # what it is -- and audit-db is named as the action that removes it.
+        message = f"not a regular file ({e.kind}); audit-db removes the row"
+        logging.error(f"VERIFY unreadable {path}: {message}")
+        tally.record_unreadable(path, message)
+        return 'unreadable'
     except Exception as e:
         logging.error(f"VERIFY unreadable {path}: {e}")
         tally.record_unreadable(path, e)
