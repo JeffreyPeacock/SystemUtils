@@ -48,7 +48,7 @@ def test_the_declared_fields_are_exactly_the_keys_returned(audited):
 def test_every_counter_is_an_int_and_failures_is_a_list(audited):
     """The heterogeneity that made `dict[str, int]` wrong in the first place."""
     for field in ("checked", "removed", "reprocessed", "skipped", "suspect",
-                  "failed"):
+                  "not_regular", "failed"):
         assert isinstance(audited[field], int), field
     assert isinstance(audited["failures"], list)
 

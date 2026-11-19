@@ -17,6 +17,7 @@ from src.db import (
     list_paths_with_prefix,
 )
 from src.file_ops import SCAN_QUEUE_MAXSIZE, process_file
+from src.regular_files import NotARegularFile, SkippedEntries, walk_regular_files
 from src.md5sum import compute_md5
 from src.utils import get_files_with_md5
 
@@ -32,12 +33,13 @@ def scan_dir_report(path, db_path, num_threads):
     # Bounded for the same reason as file_ops.scan_dir (#67): the producer
     # blocks when the workers fall behind instead of queueing the whole tree.
     file_queue = Queue(maxsize=SCAN_QUEUE_MAXSIZE)
+    # Entries that are not regular files: logged and counted, never read (#74).
+    skipped = SkippedEntries()
 
     def producer():
-        for root, _, files in os.walk(path):
-            for file in files:
-                file_queue.put(os.path.join(root, file))
-                logging.debug(f"Found file: {os.path.join(root, file)}")
+        for file_path in walk_regular_files(path, skipped):
+            file_queue.put(file_path)
+            logging.debug(f"Found file: {file_path}")
         for _ in range(num_threads):
             file_queue.put(None)  # Signal the consumers to stop
 
@@ -52,6 +54,8 @@ def scan_dir_report(path, db_path, num_threads):
                 for duplicate in duplicates:
                     print(duplicate[0])
                     logging.info(f"Duplicate: {duplicate[0]}")
+        except NotARegularFile as e:
+            skipped.record(e.path, e.kind)
         except Exception as e:
             logging.error(f"Error processing file {file_path}: {e}")
         finally:
@@ -84,6 +88,9 @@ def scan_dir_report(path, db_path, num_threads):
     start_consumers()
     producer_thread.join()
     file_queue.join()
+    not_regular = skipped.summary_line()
+    if not_regular:
+        logging.warning(not_regular)
 
 def report_duplicates(db_path, min_duplicates=2):
     duplicates = find_duplicates_with_min_count(db_path, min_duplicates)
