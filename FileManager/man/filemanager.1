@@ -166,6 +166,8 @@ is not a regular file.
 .TP
 .BI scan\-dir\-report " path"
 Scan one directory and report the duplicates found within it in the same run.
+.B Exits 3 if the walk of the tree stopped early,
+so that part of it was not scanned.
 .TP
 .B report\-duplicates
 Print every checksum in the database held by at least
@@ -420,8 +422,13 @@ accepted set.
 Nothing was recorded.
 .TP
 .B 3
-.BR scan ", " audit\-db " or " verify\-db
+.BR scan ", " scan\-dir\-report ", " audit\-db " or " verify\-db
 completed but could not read part of what it was asked to read.
+That includes a walk that stopped early: the files already found are recorded,
+the rest of the tree is not, and
+.B scan
+lists the directory as failed with
+.RB ` "walk stopped early: \fIreason\fP" ' (#75).
 .B Part of the tree was recorded or checked and part was not.
 The counts and every failed path are on standard output.
 .IP

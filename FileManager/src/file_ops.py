@@ -174,11 +174,23 @@ def scan_dir(path, db_path, num_threads, tally=None):
     def producer():
         # Only regular files reach the queue; every other entry is counted
         # into the tally by the walk itself (#74).
-        for file_path in walk_regular_files(path, tally.not_regular):
-            file_queue.put(file_path)
-            logging.debug(f"Found file: {file_path}")
-        for _ in range(num_threads):
-            file_queue.put("")  # Signal the consumers to stop
+        #
+        # The sentinels go in `finally` so that every worker exits whatever
+        # the walk does; without them each worker waits in get() forever and
+        # the scan never returns (#75). That alone would hide the failure --
+        # the scan would return normally after walking part of the tree and
+        # report it as complete -- so the stopped walk is also recorded as a
+        # failure, which makes `scan` exit 3 (#57).
+        try:
+            for file_path in walk_regular_files(path, tally.not_regular):
+                file_queue.put(file_path)
+                logging.debug(f"Found file: {file_path}")
+        except Exception as e:
+            logging.exception(f"Walk of {path} stopped early: {e}")
+            tally.record_failure(path, f"walk stopped early: {e}")
+        finally:
+            for _ in range(num_threads):
+                file_queue.put("")  # Signal the consumers to stop
 
     def consumer():
         while True:
