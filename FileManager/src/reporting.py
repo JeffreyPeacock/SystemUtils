@@ -16,7 +16,7 @@ from src.db import (
     find_duplicates_with_min_count,
     list_paths_with_prefix,
 )
-from src.file_ops import process_file
+from src.file_ops import SCAN_QUEUE_MAXSIZE, process_file
 from src.md5sum import compute_md5
 from src.utils import get_files_with_md5
 
@@ -29,7 +29,9 @@ def scan_dir_report(path, db_path, num_threads):
         db_path (str): The path to the database file.
         num_threads (int): The number of threads to use for concurrent operations.
     """
-    file_queue = Queue()
+    # Bounded for the same reason as file_ops.scan_dir (#67): the producer
+    # blocks when the workers fall behind instead of queueing the whole tree.
+    file_queue = Queue(maxsize=SCAN_QUEUE_MAXSIZE)
 
     def producer():
         for root, _, files in os.walk(path):
