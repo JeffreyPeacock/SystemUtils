@@ -95,6 +95,32 @@ def test_a_bundle_with_no_recorded_build_time_says_so(as_a_bundle, monkeypatch):
     assert version.UNKNOWN in field(version.describe(), "built")
 
 
+# --- an inherited git environment does not redirect the question -----------
+
+def test_git_env_removes_every_git_variable_and_keeps_the_rest(monkeypatch):
+    monkeypatch.setenv("GIT_DIR", "/somewhere/.git")
+    monkeypatch.setenv("GIT_INDEX_FILE", "/somewhere/.git/index")
+    monkeypatch.setenv("FM_NOT_A_GIT_VARIABLE", "kept")
+
+    env = version.git_env()
+
+    assert [k for k in env if k.startswith("GIT_")] == []
+    assert env["FM_NOT_A_GIT_VARIABLE"] == "kept"
+
+
+def test_an_inherited_git_dir_does_not_redirect_the_live_read(monkeypatch):
+    """git hooks export GIT_DIR, and it outranks `-C <root>` (#71).
+
+    Without the scrub both reads fail against the bogus directory and
+    `--version` prints CANNOT DETERMINE in a checkout that git can answer for
+    perfectly well -- so this fails before the fix rather than only after it.
+    """
+    monkeypatch.setenv("GIT_DIR", "/nonexistent/decoy.git")
+
+    assert FULL_HASH.match(field(version.describe(), "commit"))
+    assert version.live_tree_state(version.SOURCE_ROOT) in ("clean", "dirty")
+
+
 # --- git that cannot answer ------------------------------------------------
 
 def test_git_that_cannot_run_is_not_a_clean_tree(monkeypatch):

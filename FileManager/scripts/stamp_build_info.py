@@ -38,7 +38,7 @@ from pathlib import Path
 # to disagree. This script is invoked by path from build-pyz.sh, so the project
 # root is not on sys.path yet.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from src.version import TIME_FORMAT  # noqa: E402
+from src.version import TIME_FORMAT, git_env  # noqa: E402
 
 ALLOW_DIRTY_ENV = 'FM_ALLOW_DIRTY'
 
@@ -56,11 +56,17 @@ DIRTY: bool | None = {dirty!r}
 
 
 def git(root: Path, *args: str) -> str | None:
-    """git stdout, or None when the question could not be asked at all."""
+    """git stdout, or None when the question could not be asked at all.
+
+    The environment is scrubbed of `GIT_*` by `git_env()`: an inherited
+    `GIT_DIR` or `GIT_INDEX_FILE` overrides `-C <root>`, so the tree state
+    recorded in the artifact would be some other repository's (#71). This
+    script runs from a build, and a build can be driven from a git hook.
+    """
     try:
         result = subprocess.run(
             ('git', '-C', str(root), *args),
-            capture_output=True, text=True, timeout=10,
+            capture_output=True, text=True, timeout=10, env=git_env(),
         )
     except (OSError, subprocess.SubprocessError):
         return None

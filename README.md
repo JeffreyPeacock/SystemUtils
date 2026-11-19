@@ -155,8 +155,25 @@ session started in a utility's directory finds them there:
 `/create-plan`, `/prep-compaction`, `/trim-claude-md`, `/export-transcript`. Every GitHub identifier they use is
 collected in `.claude/commands/board-config.md`.
 
-Permission rules are **not** tracked. `.claude/settings.json` was removed from
-the repository on 2026-11-17 because an allow-list is the owner's local choice;
-local rules live in `.claude/settings.local.json`, which `.gitignore` covers at
-any depth. A fresh clone therefore starts with no allows and prompts for
-everything, which is the intended default.
+Permission rules are **not** tracked. The repo-root `.claude/settings.json` went
+in `e3ae0be` and `FileManager/.claude/settings.json` in #71: an allow-list is
+each developer's local choice, and a shared allow rule for a command that runs
+repository code — `pytest*`, `python src/main.py …*` — approves whatever code a
+later change adds to it.
+
+Local rules live in `.claude/settings.local.json`, which `.gitignore` covers at
+any depth as `**/.claude/settings.local.json`. That pattern was widened in #71:
+the earlier one was anchored at the repository root, so it did not cover
+`FileManager/.claude/` at all, and that file was ignored on the owner's machine
+only by a personal global ignore file. Verified with
+`git check-ignore -v FileManager/.claude/settings.local.json`, which now names
+this `.gitignore` rather than `~/.config/git/ignore`.
+
+A fresh clone therefore starts with no allows and prompts for everything, which
+is the intended default. The two worth allowing in your own
+`settings.local.json` first are the gates you run on every change:
+
+```json
+"Bash(python -m pytest*)",
+"Bash(python -m mypy src/*)"
+```

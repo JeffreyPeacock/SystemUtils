@@ -21,12 +21,20 @@ from pathlib import Path
 
 import pytest
 
+from src.version import git_env
+
 PROJECT = Path(__file__).resolve().parent.parent
 STAMPER = PROJECT / "scripts" / "stamp_build_info.py"
 
 
 def run_stamper(out: Path, root: Path, **env_overrides: str):
-    """Invoke the stamper exactly as build-pyz.sh does."""
+    """Invoke the stamper exactly as build-pyz.sh does.
+
+    The environment is passed through unscrubbed on purpose -- the stamper does
+    its own `GIT_*` scrubbing, and
+    `test_an_inherited_git_index_does_not_redirect_the_stamper` injects
+    `GIT_INDEX_FILE` here to prove it.
+    """
     env = {**os.environ}
     env.pop("FM_ALLOW_DIRTY", None)
     env.update(env_overrides)
@@ -37,10 +45,18 @@ def run_stamper(out: Path, root: Path, **env_overrides: str):
 
 
 def git(repo: Path, *args: str) -> str:
-    """Run git in `repo` and fail the test loudly if it could not."""
+    """Run git in `repo` and fail the test loudly if it could not.
+
+    `env=git_env()` is load-bearing, not hygiene. git exports `GIT_INDEX_FILE`
+    into every hook, so when the pre-commit hook runs this suite these scratch
+    repositories were addressed through the committing repository's index and
+    nine tests failed at fixture setup with `error: invalid object ... Error
+    building trees` (#71). PR #63 was merged on GitHub, so no local hook had
+    ever run them.
+    """
     result = subprocess.run(
         ("git", "-C", str(repo), *args),
-        capture_output=True, text=True, timeout=60,
+        capture_output=True, text=True, timeout=60, env=git_env(),
     )
     assert result.returncode == 0, (
         f"git {' '.join(args)} failed in {repo}: {result.stderr}"
@@ -60,6 +76,20 @@ def clean_repo(tmp_path) -> Path:
     git(repo, "add", "thing.py")
     git(repo, "commit", "-qm", "first")
     assert git(repo, "status", "--porcelain") == "", "fixture is not clean"
+    return repo
+
+
+@pytest.fixture
+def decoy_repo(tmp_path) -> Path:
+    """A second repository, with a different HEAD, to be pointed at wrongly."""
+    repo = tmp_path / "decoy"
+    repo.mkdir()
+    git(repo, "init", "-q")
+    git(repo, "config", "user.email", "decoy@example.invalid")
+    git(repo, "config", "user.name", "Decoy")
+    (repo / "other.py").write_text("# a different file entirely\n")
+    git(repo, "add", "other.py")
+    git(repo, "commit", "-qm", "decoy")
     return repo
 
 
@@ -208,3 +238,32 @@ def test_the_generated_module_is_importable_and_data_only(clean_repo, tmp_path):
     text = out.read_text()
     assert "import" not in text, "build_info.py must stay data only"
     assert set(stamped_values(out)) >= {"COMMIT", "BUILD_TIME", "DIRTY"}
+
+
+def test_an_inherited_git_index_does_not_redirect_the_stamper(
+        clean_repo, decoy_repo, tmp_path):
+    """`GIT_DIR` and `GIT_INDEX_FILE` outrank `-C <root>` (#71).
+
+    The failure this guards against is not a crash. git exports both variables
+    into every hook it runs, so a build driven from a hook would read some
+    other repository's HEAD and some other repository's tree state, and stamp
+    them into the archive as facts about `root`. `--version` would then name a
+    commit that does not contain the code in the bundle -- the one answer the
+    whole refusal exists to prevent, arrived at by a different route.
+
+    Proven to fire: with the scrubbing removed from `git_env()`, COMMIT comes
+    back as the decoy's HEAD and this assertion fails.
+    """
+    out = tmp_path / "build_info.py"
+
+    result = run_stamper(
+        out, clean_repo,
+        GIT_DIR=str(decoy_repo / ".git"),
+        GIT_INDEX_FILE=str(decoy_repo / ".git" / "index"),
+    )
+
+    assert result.returncode == 0, result.stderr
+    values = stamped_values(out)
+    assert values["COMMIT"] == git(clean_repo, "rev-parse", "HEAD")
+    assert values["COMMIT"] != git(decoy_repo, "rev-parse", "HEAD")
+    assert values["DIRTY"] is False
