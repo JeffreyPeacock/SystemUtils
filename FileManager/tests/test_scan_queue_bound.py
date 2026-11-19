@@ -95,10 +95,13 @@ def _gated_process_file(gate, seen):
     return process_file
 
 
-def test_the_bound_is_a_few_thousand_entries():
-    """The production value: large enough to keep every worker fed, small
-    enough that its memory does not depend on the tree."""
-    assert 1000 <= file_ops.SCAN_QUEUE_MAXSIZE <= 10000
+def test_the_bound_is_an_8_mib_budget():
+    """The production value: 8 MiB of queued paths at the measured cost of one
+    path, so its memory does not depend on the tree. Both scans share it."""
+    assert file_ops.SCAN_QUEUE_MEMORY_BYTES == 8 * 1024 * 1024
+    assert file_ops.SCAN_QUEUE_MAXSIZE == (
+        file_ops.SCAN_QUEUE_MEMORY_BYTES // file_ops.BYTES_PER_QUEUED_PATH)
+    assert file_ops.SCAN_QUEUE_MAXSIZE == 68_759
     assert reporting.SCAN_QUEUE_MAXSIZE == file_ops.SCAN_QUEUE_MAXSIZE
 
 
