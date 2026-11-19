@@ -852,3 +852,63 @@ order — a session that starts stale still goes red, and the file is correct fo
 the next one.
 
 **Related issues:** #54, #57, #50
+
+---
+
+## A git question is scoped to a root, and the environment must not re-scope it
+
+Every git call in this project names the directory it is asking about:
+`git -C <root> rev-parse HEAD`, `git -C <root> status --porcelain`. That scope
+is the whole design -- `src/version.py` reads the live state of a checkout,
+`scripts/stamp_build_info.py` decides what a bundle will claim about itself for
+the rest of its life, and both are questions about one specific tree.
+
+**`GIT_DIR` and `GIT_INDEX_FILE` in the environment outrank `-C`.** A command
+that inherits them answers about a different repository and reports success, so
+the scope the call spells out is silently replaced. git exports both into the
+environment of every hook it runs, which is how a value nobody set reaches code
+that never asked for one.
+
+The symptom arrived from the Claude-operations lane as #71: the pre-commit hook
+runs the FileManager suite, so `tests/test_stamp_build_info.py`'s throwaway
+repositories were addressed through *this* repository's index. Nine tests failed
+at fixture setup with `error: invalid object ... Error building trees`, and every
+local commit touching FileManager code was refused. PR #63 was merged on GitHub,
+so no local hook had ever run those tests -- the same shape as a gate that has
+never been proven to fire.
+
+### The scrub lives in one place, and reaches past the tests
+
+`src.version.git_env()` returns the environment with every `GIT_*` variable
+removed, and `_git` passes it. `scripts/stamp_build_info.py` imports it exactly
+as it already imports `TIME_FORMAT`, for the same stated reason: two copies of
+one definition is how they come to disagree. The test helpers import it too.
+
+**Fixing only the test helper was the tempting reading of the ticket and the
+wrong one.** The tests were what hurt, but the stamper is where the consequence
+is permanent: a build driven from a hook would read another repository's HEAD
+and tree state and write them into the archive as facts about `root`. The result
+is a bundle whose `--version` names a commit it does not contain -- precisely the
+confidently-wrong answer the dirty-tree refusal exists to prevent, arrived at by
+a route the refusal does not watch. An index built by such a bundle cannot be
+traced back to code afterwards.
+
+Scrubbing at each call site was rejected for the same reason the definition is
+shared: the property wanted is *every* git question in this project is answered
+about the root it names, and a per-call-site opt-in is a property that holds
+until the next call site is written.
+
+### Proven to fire, three times
+
+A guard that cannot fail is this repository's named defect (`#45`-era reasoning,
+`docs/Development-Principles.md` §3a), and a scrub is invisible when it works.
+So each of the three tests was run against a deliberately disabled `git_env()`
+and observed to fail there: the scrub itself; the live read, which without it
+reports `CANNOT DETERMINE` for a checkout git can answer for perfectly well;
+and the stamper, driven against a decoy repository whose HEAD it must not
+report. The measurement that opened the ticket was reproduced the same way, with
+`GIT_INDEX_FILE` pointing at a *copy* of this repository's index rather than the
+index itself -- those fixtures run `git add`, and aiming them at the live index
+could have rewritten it.
+
+**Related issues:** #71, #62, #54
