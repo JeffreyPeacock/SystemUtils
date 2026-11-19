@@ -155,7 +155,8 @@ session started in a utility's directory finds them there:
 `/create-plan`, `/prep-compaction`, `/trim-claude-md`, `/export-transcript`. Every GitHub identifier they use is
 collected in `.claude/commands/board-config.md`.
 
-Permission rules are **not** tracked. The repo-root `.claude/settings.json` went
+Permission **grants** are not tracked: a shared `.claude/settings.json` may hold only `deny`
+and `ask` rules, and no tracked one exists today. The repo-root `.claude/settings.json` went
 in `e3ae0be` and `FileManager/.claude/settings.json` in #71: an allow-list is
 each developer's local choice, and a shared allow rule for a command that runs
 repository code — `pytest*`, `python src/main.py …*` — approves whatever code a

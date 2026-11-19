@@ -191,6 +191,28 @@ them from a session started in a utility's directory, so a utility needs no copy
 `board-config.md` in the same directory is not a command — it is the shared
 identifier table the commands read.
 
+### Permission settings — a shared `settings.json` may hold only `deny` and `ask`
+
+**Allow rules, hooks, `env` and every other grant go in `.claude/settings.local.json`**, which
+`.gitignore` covers at any depth as `**/.claude/settings.local.json`. A shared allow rule approves a
+command for everyone who opens the repository, and one for a command that runs repository code —
+`Bash(pytest*)`, `Bash(python src/main.py ...*)` — approves whatever code a later change puts behind
+it, including code written after the rule was agreed to.
+
+Neither tracked `settings.json` survives: the repo-root copy went in `e3ae0be` and
+`FileManager/.claude/settings.json` in #71, both holding nothing but allow rules. A fresh clone
+therefore starts with no allows and prompts for everything, which is the intended default;
+`README.md` names the two worth allowing locally first.
+
+`deny` and `ask` are the opposite case and do belong in the tracked file, because each withholds a
+grant rather than making one — a decision about the repository that should reach every checkout. No
+tracked `settings.json` exists today, so adding one back means a file carrying `deny`/`ask` and
+nothing else.
+
+Filed as item 2 of #71 by the Claude-operations lane and **confirmed directly by the owner on
+2026-11-18**; the concrete changes landed in PR #72. The estate-wide wording of the same rule
+belongs to Claude-Ops (WFAI-Ops Epic #361) — this states it for this repository.
+
 ## Scripts
 
 `scripts/` holds repo-level tooling; `scripts/lib/` holds what those scripts
