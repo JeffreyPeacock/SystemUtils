@@ -24,6 +24,8 @@ from pathlib import Path
 
 import pytest
 
+from src.version import git_env
+
 REPO = Path(__file__).resolve().parents[2]
 PROJECT = Path(__file__).resolve().parents[1]
 BUILD_SCRIPT = PROJECT / "scripts" / "build-pyz.sh"
@@ -166,7 +168,7 @@ def test_the_build_output_is_not_committable():
     targets = ["FileManager/dist/FileManager.pyz", "FileManager/build/pyz"]
     result = subprocess.run(
         ["git", "check-ignore", *targets],
-        cwd=REPO, capture_output=True, text=True, timeout=30,
+        cwd=REPO, capture_output=True, text=True, timeout=30, env=git_env(),
     )
 
     assert result.returncode == 0, (

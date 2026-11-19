@@ -17,6 +17,7 @@ failing. The third is reported as `CANNOT DETERMINE` and never silently becomes
 `clean` (`docs/Development-Principles.md` on a check that cannot run).
 """
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -39,6 +40,26 @@ TIME_FORMAT = '%Y-%m-%d %H:%M:%S %Z'
 SOURCE_ROOT = Path(__file__).resolve().parent.parent
 
 
+def git_env() -> dict[str, str]:
+    """The environment with every `GIT_*` variable removed.
+
+    **`GIT_DIR` and `GIT_INDEX_FILE` override `-C <root>`**, so a git command
+    that inherits them answers about a different repository from the one it
+    names -- while looking like it worked. git exports them into every hook it
+    runs, which is how an inherited value reaches code that never asked for
+    one: a pre-commit hook runs the suite, and the suite's throwaway
+    repositories are then addressed through the committing repository's index
+    (#71, measured 2026-11-18 -- nine tests failed at fixture setup, and the
+    error named a file that exists only in this repository).
+
+    Scrubbing is done here rather than at each call site because every git
+    question in this project is scoped to an explicit `root`; an inherited
+    override contradicts that scope in all of them. `scripts/stamp_build_info.py`
+    imports this for the same reason it imports TIME_FORMAT.
+    """
+    return {k: v for k, v in os.environ.items() if not k.startswith('GIT_')}
+
+
 def _git(root: Path, *args: str) -> str | None:
     """Run git in `root` and return its stdout, or None if it could not run.
 
@@ -51,7 +72,7 @@ def _git(root: Path, *args: str) -> str | None:
     try:
         result = subprocess.run(
             ('git', '-C', str(root), *args),
-            capture_output=True, text=True, timeout=10,
+            capture_output=True, text=True, timeout=10, env=git_env(),
         )
     except (OSError, subprocess.SubprocessError):
         return None
