@@ -118,6 +118,46 @@ Only killing the process worked, which meant a plugin — `pytest-timeout`, `tim
 **Related:** §3, and `FileManager/pytest.ini`, where the rejected alternatives are recorded beside the
 setting so nobody re-derives them.
 
+## 3b — A gate proven in one environment is not proven in the one it runs in
+
+§3 says prove a guard can fail; §3a says prove the build goes red. Both can be satisfied and the
+guard still not work, because **the environment a check runs in is part of the check.**
+
+`tests/test_stamp_build_info.py` was merged through PR #63 and was green everywhere it had ever
+been run: directly in a shell, and on the CI runner. It had never run inside a git hook. git exports
+`GIT_INDEX_FILE` and `GIT_DIR` into the environment of every hook, and both outrank the `-C <root>`
+that each of those tests depends on, so the first time the pre-commit hook ran that module — months
+later, on an unrelated commit — nine tests failed at fixture setup and every local commit touching
+FileManager code was refused (#71, 2026-11-18). The hook was installed and looked healthy the whole
+time; what had never happened was the hook running *that* module.
+
+This repository has two older instances of the same shape, both now load-bearing tests:
+
+| the check | the environment that was the point |
+|---|---|
+| the bundle runs and imports only its own code | run from `/` with `PYTHONPATH=/nonexistent`, because running it from the project directory lets `src.` resolve from the working directory instead of the archive |
+| the bundle names its commit with no git available | run with `PATH=/nonexistent/bin`, because every other version test still passes on a machine that has git |
+
+**In practice:**
+
+1. **List the environments a thing actually runs in**, and say which ones have been tried. For this
+   repo that is: a shell, the pre-commit hook, the CI runner, `sudo` as root with root's `PATH`, and
+   inside the zipapp. They differ in the environment variables present, which interpreter resolves,
+   and what the working directory is.
+2. **Verify through the real mechanism, not a simulation of it.** The fix for #71 was confirmed by
+   making an ordinary commit that staged exactly the kind of change being refused and letting the
+   installed hook run the gate on it. A hand-built environment that merely resembles the hook's
+   proves less, and in that case could not be built safely at all, since a faithful one would have
+   let the suite write through the live index.
+3. **When code inherits an environment it did not set, strip what it must not inherit — once.**
+   `src.version.git_env()` is the single definition, imported by the build stamper and the test
+   helpers. A per-call-site opt-in is a property that holds only until the next call site is
+   written.
+4. **Treat "this has always passed" as evidence about the environments it has run in**, and nothing
+   more. A test merged on GitHub has been proven on the runner.
+
+**Related:** §3, §3a, and `FileManager/docs/Architecture+Design.md` on where the `GIT_*` scrub lives.
+
 ## 4 — A quality floor is a ratchet, never a target to be lowered
 
 `pytest.ini` pins `--cov-fail-under`, and `mypy.ini` lists the modules still exempt from

@@ -149,6 +149,13 @@ that means something like *the audit deletes rows for files that still exist* â€
 this tool's whole output is a list of files a human may then delete, so a wrong
 answer has consequences past the process. Do not inflate p1 for anything less.
 
+**`gh pr checks` reports state through its exit code, which makes a failure look like a broken
+poll.** It exits non-zero while any check is still pending *and* when one has failed, so a watcher
+written as `out=$(gh pr checks N) || { echo 'poll failed'; continue; }` sits in that branch forever
+once a check goes red and never reports the failure â€” CANNOT CHECK collapsing into "still waiting".
+Use `gh pr view <PR> --json statusCheckRollup`, which exits 0 and hands back `status` and
+`conclusion` as data to be read. Measured 2026-11-18 while watching PR #72.
+
 **Priority cannot be read from `gh issue list`.** In gh 2.45.0 the
 `projectItems` JSON carries only `status` and `title`, so a label-style or
 `--json labels` query returns every ticket as unprioritized without erroring.
