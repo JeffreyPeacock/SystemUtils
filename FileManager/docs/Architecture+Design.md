@@ -962,3 +962,68 @@ a partial index reported as complete, so the fix also needs the failure
 recorded in the results. Filed as #75.
 
 **Related issues:** #67, #43, #57, #75
+
+---
+
+## Only regular files are read, and a symlink is never followed
+
+**The problem.** Every action that walks a tree opened whatever `os.walk`
+listed under `files`, and that list includes devices, FIFOs, sockets and
+symlinks. The mahtoh baseline scan of `/home2` never finished. One worker read a
+copied `/dev/random` in a backed-up postfix chroot for about 36 hours, because
+a character device never reaches end of file. Another worker was blocked in
+`open()`, which is how a FIFO with no writer behaves. A root `rsync -a` backup
+recreates these files every night, so any backup volume can contain them. The
+scan gave no error and wrote no summary, and the database stopped growing 12
+hours before anyone looked.
+
+**The decision.** The owner's rule: only regular files are read or recorded,
+and a symlink is never followed, whatever it points at. `src/regular_files.py`
+is the one definition, and the rule is enforced in three places, each with a
+test that fails without it:
+
+1. `walk_regular_files` uses `lstat` and yields only `S_ISREG` entries. It
+   counts every other entry by kind, including a symlink to a directory, which
+   `os.walk` lists under `dirs` and skips without any record.
+2. `process_file` checks before the skip check. A symlink row recorded by an
+   older version matches its stored (size, mtime) through the link, so without
+   this check it would report `skipped` and keep the row.
+3. `compute_md5` checks before it opens anything, opens with
+   `O_NOFOLLOW | O_NONBLOCK`, and re-checks the open descriptor with `fstat`. A
+   path replaced by a FIFO after the check therefore cannot block the `open()`.
+   The check comes *before* the open, and not only after it, because opening a
+   device can have effects of its own: a tape drive rewinds.
+
+**A skip is not a failure, and a named path is.** A skipped entry is logged per
+path and counted by kind in a second summary line, and it does not change the
+exit status, because nothing that belongs in the index was missed. A
+non-regular path named on the command line is different: the operator asked
+for it and the scan did not cover it, so it counts as a failure (exit 3), like a
+missing path.
+
+**What each action does with an existing row.** `audit-db` removes rows whose
+path is no longer a regular file, under `--dry-run`, and counts them as
+`not regular` apart from deleted files. `verify-db` never writes, so it reports
+such a row as unreadable and names `audit-db`. Calling it a pass would break
+the three-outcome rule from #50.
+
+**The audit had to change how it tests for "missing".** It used
+`os.path.exists`, which follows symlinks and returns False for *any* error. A
+recorded file under a directory the auditor could not search was therefore
+removed as deleted. Only `FileNotFoundError` and `NotADirectoryError` now count
+as missing. Any other error is a failure, the row is kept, and the audit exits
+3. This fails closed: a row lost by mistake can only be recovered by a rescan,
+while a kept row costs one more audit.
+
+**What was ruled out.**
+
+- *Following a symlink to a regular file.* This would record one file under
+  two paths, so every symlink would appear as a duplicate of its own target,
+  in a tool whose output is a list of files to delete.
+- *Checking only in the consumer.* It works, but the queue would carry entries
+  that are never read. Checking in the walk also counts a symlinked directory,
+  which never reaches the consumer at all.
+- *Relying only on `O_NONBLOCK` and `fstat`.* That would stop the hang but
+  still open every device in the tree.
+
+**Related issues:** #74, #50, #57
