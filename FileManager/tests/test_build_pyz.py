@@ -17,6 +17,7 @@ from __future__ import annotations
 import contextlib
 import os
 import re
+import shutil
 import sqlite3
 import subprocess
 import zipfile
@@ -137,18 +138,51 @@ def test_the_bundle_ignores_a_poisoned_pythonpath(built, tmp_path):
     assert "File Manager Application" in result.stdout
 
 
-def test_the_artifact_lands_where_the_installer_looks(built):
-    """The default path is part of the contract, so a default-path build is
-    what gets checked -- `built` overrides it, which would hide a change."""
-    # FM_ALLOW_DIRTY for the same reason as the `built` fixture: this asserts
-    # on the default OUTPUT PATH, not on the state of the checkout running it.
+def _git(repo: Path, *args: str) -> None:
+    """Run git in a scratch repository; `git_env()` for the reason in #71."""
     result = subprocess.run(
-        [str(BUILD_SCRIPT)], capture_output=True, text=True, timeout=120,
-        env={**os.environ, "FM_ALLOW_DIRTY": "1"},
+        ("git", "-C", str(repo), *args),
+        capture_output=True, text=True, timeout=60, env=git_env(),
+    )
+    assert result.returncode == 0, f"git {' '.join(args)} failed: {result.stderr}"
+
+
+def test_the_artifact_lands_where_the_installer_looks(tmp_path):
+    """The default path is part of the contract, so a default-path build is
+    what gets checked -- `built` overrides it, which would hide a change.
+
+    The build runs from a COPY of the project, committed into a scratch
+    repository, so its default path is the copy's `dist/` (#78). This test used
+    to run the real `scripts/build-pyz.sh` with no argument, so every full run
+    of the suite replaced `FileManager/dist/FileManager.pyz` -- the file the
+    Desktop-Ops installer reads -- with a dirty build of whatever branch was
+    checked out. That replaced a release bundle waiting to be installed. The
+    copy is committed, so it is clean and this build needs no FM_ALLOW_DIRTY.
+    """
+    copy = tmp_path / "FileManager"
+    ignore = shutil.ignore_patterns("__pycache__")
+    shutil.copytree(PROJECT / "src", copy / "src", ignore=ignore)
+    shutil.copytree(PROJECT / "scripts", copy / "scripts", ignore=ignore)
+    # The repo-root .gitignore covers build/, dist/ and __pycache__/. Without
+    # the same rules, the build/ the script creates and the bytecode written
+    # when the stamper imports src.version would make the copy dirty before
+    # the stamp, and the stamper would refuse it.
+    (copy / ".gitignore").write_text("build/\ndist/\n__pycache__/\n")
+    _git(copy, "init", "-q")
+    _git(copy, "config", "user.email", "test@example.invalid")
+    _git(copy, "config", "user.name", "Test")
+    _git(copy, "add", "-A")
+    _git(copy, "commit", "-qm", "copy")
+
+    env = {**os.environ}
+    env.pop("FM_ALLOW_DIRTY", None)
+    result = subprocess.run(
+        [str(copy / "scripts" / "build-pyz.sh")],
+        capture_output=True, text=True, timeout=120, env=env,
     )
     assert result.returncode == 0, result.stderr
 
-    expected = PROJECT / "dist" / "FileManager.pyz"
+    expected = copy / "dist" / "FileManager.pyz"
     assert expected.is_file(), (
         f"default build did not produce {expected}; the Desktop-Ops installer "
         f"reads that path (#54)"
