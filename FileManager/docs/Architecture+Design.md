@@ -1027,3 +1027,35 @@ while a kept row costs one more audit.
   still open every device in the tree.
 
 **Related issues:** #74, #50, #57
+
+---
+
+## A walk that stops early must end the scan and must be reported (#75)
+
+**Problem.** Both producer/consumer scans (`scan_dir` in `src/file_ops.py` and
+`scan_dir_report` in `src/reporting.py`) stop their workers with one sentinel
+per worker. The producer put those sentinels only after the walk finished. If
+the walk raised an exception partway through, no sentinel was put, every worker
+waited in `queue.get()`, and the scan never returned.
+
+**Decision.** The producer puts the sentinels in a `finally` block, so the
+workers always exit. It also records the stopped walk as a failure, because a
+`finally` block alone would turn the hang into a partial index reported as a
+complete one, which is the problem #57 fixed. `scan` lists the directory as
+`walk stopped early: <reason>` in its failure list and exits 3.
+`scan_dir_report` keeps no tally, so it returns False and `main` exits 3. The
+traceback is logged in both cases.
+
+**What was ruled out.**
+
+- *Only the `finally` block.* It stops the hang but reports exit 0 for a tree
+  that was only partly walked.
+- *A timeout on `queue.get()` in the workers.* A worker cannot tell a slow walk
+  from a stopped one, and a scan of a large tree has long pauses between
+  directories.
+
+Each half was removed in both producers and a test failed: without the
+`finally` block the test hung until pytest-timeout stopped it, and without the
+recording three tests failed in about one second.
+
+**Related issues:** #75, #57, #43
