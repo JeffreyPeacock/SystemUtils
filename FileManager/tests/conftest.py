@@ -17,6 +17,7 @@ nothing to mock; what transfers is the pattern of a fresh resource per test.
 
 from __future__ import annotations
 
+import hashlib
 import os
 import shutil
 import sys
@@ -187,6 +188,39 @@ def _no_writes_into_the_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.chdir(cwd)
     yield
     shutil.rmtree(cwd, ignore_errors=True)
+
+
+_DIST = Path(__file__).resolve().parents[1] / "dist"
+
+
+def _dist_state() -> dict[str, tuple[int, int, str]]:
+    """Every file under the real `dist/`: (size, mtime_ns, sha256). Empty if absent."""
+    state = {}
+    if _DIST.exists():
+        for path in sorted(_DIST.rglob("*")):
+            if path.is_file():
+                st = path.stat()
+                digest = hashlib.sha256(path.read_bytes()).hexdigest()
+                state[str(path.relative_to(_DIST))] = (st.st_size, st.st_mtime_ns, digest)
+    return state
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _dist_is_not_touched():
+    """Fail the run if any test changed the real `FileManager/dist/` (#78).
+
+    `dist/FileManager.pyz` is the file the Desktop-Ops installer reads. A test
+    that built into it replaced a release bundle waiting to be installed with a
+    dirty build of the branch under test, and the installer has no expected
+    sha256 to notice. A test that needs a build writes it under `tmp_path`.
+    """
+    before = _dist_state()
+    yield
+    after = _dist_state()
+    assert after == before, (
+        f"the test session changed {_DIST}, the path the installer reads (#78).\n"
+        f"before: {before}\nafter:  {after}"
+    )
 
 
 # -- invoking the CLI ------------------------------------------------------

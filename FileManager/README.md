@@ -181,6 +181,11 @@ CI and asserts the archive carries no stale bytecode.
 `dist/` and `build/` are gitignored. The bundle is built, never committed — a
 committed one goes stale against the source silently.
 
+The test suite never writes into `dist/`. Every build it makes goes under a
+temporary directory, and the run fails if anything in `dist/` changes (#78).
+So you can run the suite while a release bundle waits in `dist/` for
+installation.
+
 ---
 
 ## Things to know before you run it
