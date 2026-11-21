@@ -167,7 +167,7 @@ cannot read contributes nothing to the database. `sudo python src/main.py` does
 from the pyenv shim, so it silently runs a different interpreter or none at all.
 
 ```sh
-scripts/build-pyz.sh      # -> dist/FileManager.pyz, about 68K
+scripts/build-pyz.sh      # -> dist/FileManager.pyz, about 96K
 sudo ./dist/FileManager.pyz --threads 8 --db-path /var/lib/filemanager/home2.db scan /home2
 ```
 
@@ -256,7 +256,7 @@ python -m mypy src/           # must be clean
 
 423 tests in 30 modules, no xfails (2 more in a checkout that has the gitignored `cmpdirs.sh`). `pytest.ini` enables branch coverage, writes
 `coverage.xml` and `test-results.xml`, and fails under **99%** — the current real
-measurement is 99.71%, which meets the 95% `docs/REQUIREMENTS.txt` has asked for
+measurement is 99.75%, which meets the 95% `docs/REQUIREMENTS.txt` has asked for
 since 2024. **Nothing is excluded from measurement**: `src/gui.py` was the only
 omission and it left with the GUI in #51, so `.coveragerc` has no `omit` key at
 all. The gap was closed by epic
@@ -308,9 +308,10 @@ ready:
 - **#68** — `verify-db` loads every recorded row before hashing anything: ~253 bytes per row. Use `--prefix` to bound a run until that is fixed.
 - **#69** — the database's parent directory must exist. Without it the run dies with a traceback and exits 1, which this tool's contract defines as an invalid argument.
 
-Six silent-wrong-answer paths are fixed: #1 and #2; #43, where
+Eight silent-wrong-answer paths are fixed: #1 and #2; #43, where
 `scan-dir-report` never returned at all until its shutdown was tested; #41,
 where a file that could not be read was reported as a duplicate; #57, where a
 scan that could not read part of a tree still exited 0; and #50, where a
 corrupted file was skipped by both `scan` and `audit-db` because its size and
-mtime had not changed.
+mtime had not changed; #74, where devices and FIFOs were read and symlinks were
+followed and recorded; and #75, where a walk that stopped early hung the scan.

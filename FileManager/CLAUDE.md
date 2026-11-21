@@ -24,7 +24,7 @@ below worth reading before changing anything.
 graphical user-interface" requirement is **not met here, and will not be**: the
 GUI left this project in #51 and becomes a separate application (#53). This is
 a headless CLI scanner — no Tk, no display, no optional GUI flag. The 95%
-coverage requirement is **met**, at 99.71%; epic #8 and its children #32-#36
+coverage requirement is **met**, at 99.75%; epic #8 and its children #32-#36
 and #45 are closed.
 
 ## Tech Stack
@@ -86,7 +86,7 @@ python -m pytest --no-cov -q                                # skip the floor whi
 python -m mypy src/
 
 # Bundle as one executable, for running as root
-scripts/build-pyz.sh     # -> dist/FileManager.pyz (~68K); optional arg overrides
+scripts/build-pyz.sh     # -> dist/FileManager.pyz (~96K); optional arg overrides
 FM_ALLOW_DIRTY=1 scripts/build-pyz.sh    # build anyway; artifact says "dirty at build time"
 ./dist/FileManager.pyz --version         # the commit it was built from
 sudo ./dist/FileManager.pyz --threads 8 --db-path /var/lib/filemanager/home2.db scan /home2
@@ -96,7 +96,7 @@ sudo ./dist/FileManager.pyz --threads 8 --db-path /var/lib/filemanager/home2.db 
 `python` from *root's* PATH, not the pyenv shim, so it silently picks a
 different interpreter or none. `scripts/build-pyz.sh` solves exactly that by
 pinning `/usr/bin/python3 -I` into a `zipapp` archive — stdlib only, no
-vendoring, 68K (#52). It verifies the artifact by **running** it from `/`,
+vendoring, about 96K (#52). It verifies the artifact by **running** it from `/`,
 because a zipapp can be written successfully and still be unrunnable, and
 running it from inside this directory would let `src.` imports resolve from the
 working directory rather than from the archive. `tests/test_build_pyz.py`
@@ -118,7 +118,7 @@ if any file under `dist/` was created, changed or removed.
 **423 tests across 30 modules, all passing, no xfails** (in a fresh clone and in CI; a checkout that has the gitignored `cmpdirs.sh` collects 2 more, from `tests/test_script_conventions.py`). Coverage is on by default
 via `pytest.ini` (`--cov=src --cov-branch`), writes `coverage.xml` and
 `test-results.xml`, and enforces `--cov-fail-under=99` against a measured
-**99.71%** combined line+branch coverage.
+**99.75%** combined line+branch coverage.
 
 Per-module figures live in `.coverage-summary.md`, regenerated every run and
 committed — read that rather than duplicating a table here that goes stale. As
@@ -157,7 +157,7 @@ list by **passing** `check_untyped_defs`, never by the defaults being loosened.
 `gui` and `main` left it in #36 without needing annotation at all — the stanzas
 had been guarding nothing. **`db` left it in #60**, and that one needed work: a
 `TypedDict` for `audit_db`'s return plus annotations on `duplicates` and
-`md5_to_paths`. mypy now checks 9 files. **Two stanzas remain**, `file_ops` and
+`md5_to_paths`. mypy now checks 10 files (`regular_files` joined in #74, fully checked). **Two stanzas remain**, `file_ops` and
 `reporting`, each failing on its one `file_queue` literal.
 
 **Re-run mypy with the stanzas stripped when checking the ratchets, and compare
@@ -368,10 +368,11 @@ a list in this file only goes stale. `/priority-review` renders it as a
 priority-ordered table in `FileManager/docs/ticket-priority-review.md` when you
 want it at a glance.
 
-Five silent-wrong-answer paths are fixed — #1 (prefix-anchored removal), #2
+Seven silent-wrong-answer paths are fixed — #1 (prefix-anchored removal), #2
 (audit-db emptying an unmounted volume), #43 (`scan-dir-report` never returning),
-#41 (an unreadable file reported as a duplicate) and #57 (a partial index
-reported as a complete one). The coverage epic **#8** is closed, the GUI tickets
+#41 (an unreadable file reported as a duplicate), #57 (a partial index
+reported as a complete one), #74 (devices and FIFOs read, symlinks followed
+and recorded) and #75 (a walk that stopped early hung the scan). The coverage epic **#8** is closed, the GUI tickets
 #3 and #11 closed with #51 when the GUI left, and #58 fixed `--help` exiting 2.
 
 **#50 closed with `verify-db`**, so the database can now be read back: a
@@ -387,5 +388,6 @@ Desktop-Ops installer's gate is cleared. Requirement 6 (dropping the
 `sys.path.append` in `main.py`) was **rejected by the owner**: it stays.
 
 Also open: **#53** (the GUI as its own application, carrying the decision from
-#11 and the path-handling bug from #3). #60 closed with the `AuditCounts`
+#11 and the path-handling bug from #3), **#68** (`verify-db` memory scales with
+the database) and **#69** (a missing database directory exits 1 with a traceback). #60 closed with the `AuditCounts`
 TypedDict.
