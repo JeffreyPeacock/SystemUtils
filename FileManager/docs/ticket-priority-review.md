@@ -3,7 +3,7 @@
 The SystemUtils project board (#14) on GitHub holds the authoritative detail; this doc is the
 at-a-glance ordering view the board doesn't give cleanly.
 
-**Snapshot:** 2026-11-20 17:21 MST · 3 open · 3 Backlog
+**Snapshot:** 2026-11-20 17:51 MST · 3 open · 3 Backlog
 
 |  Pri   | #  |  Status |   Area   | Title | Note |
 |:------:|:--:|:-------:|:--------:|-------|------|

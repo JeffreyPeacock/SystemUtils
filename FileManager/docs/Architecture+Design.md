@@ -1059,3 +1059,36 @@ Each half was removed in both producers and a test failed: without the
 recording three tests failed in about one second.
 
 **Related issues:** #75, #57, #43
+
+---
+
+## The test suite must not write into the real `dist/` (#78)
+
+**Problem.** `dist/FileManager.pyz` is the path the Desktop-Ops installer
+reads. The test that checks the default output path ran the real
+`scripts/build-pyz.sh` with no argument and `FM_ALLOW_DIRTY=1`, so every full
+test run replaced that file with a dirty build of the checked-out branch. On
+2026-11-19 a run on the #75 branch replaced the #74 release bundle while it
+waited for installation. The installer had no expected sha256, so it accepted
+the replacement.
+
+**Decision.** The test copies `src/` and `scripts/` into a scratch git
+repository under `tmp_path`, commits the copy, and runs the copy's build script
+with no argument. The script finds its project root from its own location, so
+the default path resolves to the copy's `dist/`. This tests the unchanged
+script, and the copy is clean, so the build no longer needs `FM_ALLOW_DIRTY`.
+A session fixture in `tests/conftest.py`, `_dist_is_not_touched`, records every
+file under the real `dist/` and fails the run if any was created, changed or
+removed. The fixture catches any test that builds there, not only this one.
+
+**What was ruled out.**
+
+- *An environment variable that overrides the project root in
+  `build-pyz.sh`.* It would add a setting to a script that runs before a
+  root-run install, only so that a test can use it.
+- *Checking the default path by reading the script text.* That tests a string,
+  not where the build writes.
+- *Backing up and restoring `dist/` around the test.* A test that is killed
+  before the restore still loses the release bundle.
+
+**Related issues:** #78, #54, #62
