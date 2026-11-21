@@ -439,7 +439,10 @@ def main():
         if not check_file(args.path, db_path):
             return 1
     elif args.action == 'scan-dir-report':
-        scan_dir_report(args.path, db_path, args.threads)
+        # False means the walk stopped early and part of the tree was not
+        # scanned: the same partial result as an incomplete scan (#75).
+        if not scan_dir_report(args.path, db_path, args.threads):
+            return EXIT_INCOMPLETE
     elif args.action == 'report-duplicates':
         if args.prefix:
             duplicates = report_duplicates_for_prefix(db_path, args.prefix)

@@ -29,6 +29,11 @@ def scan_dir_report(path, db_path, num_threads):
         path (str): The path to the directory.
         db_path (str): The path to the database file.
         num_threads (int): The number of threads to use for concurrent operations.
+
+    Returns:
+        bool: True if the walk finished, False if it stopped early (#75). The
+            caller turns False into exit 3, because part of the tree was not
+            scanned.
     """
     # Bounded for the same reason as file_ops.scan_dir (#67): the producer
     # blocks when the workers fall behind instead of queueing the whole tree.
@@ -36,12 +41,21 @@ def scan_dir_report(path, db_path, num_threads):
     # Entries that are not regular files: logged and counted, never read (#74).
     skipped = SkippedEntries()
 
+    walk_failures = []
+
     def producer():
-        for file_path in walk_regular_files(path, skipped):
-            file_queue.put(file_path)
-            logging.debug(f"Found file: {file_path}")
-        for _ in range(num_threads):
-            file_queue.put(None)  # Signal the consumers to stop
+        # Sentinels in `finally`, and the failure recorded: see the producer in
+        # file_ops.scan_dir, which has the same two requirements (#75).
+        try:
+            for file_path in walk_regular_files(path, skipped):
+                file_queue.put(file_path)
+                logging.debug(f"Found file: {file_path}")
+        except Exception as e:
+            logging.exception(f"Walk of {path} stopped early: {e}")
+            walk_failures.append(str(e))
+        finally:
+            for _ in range(num_threads):
+                file_queue.put(None)  # Signal the consumers to stop
 
     def process_and_report(file_path):
         try:
@@ -91,6 +105,7 @@ def scan_dir_report(path, db_path, num_threads):
     not_regular = skipped.summary_line()
     if not_regular:
         logging.warning(not_regular)
+    return not walk_failures
 
 def report_duplicates(db_path, min_duplicates=2):
     duplicates = find_duplicates_with_min_count(db_path, min_duplicates)

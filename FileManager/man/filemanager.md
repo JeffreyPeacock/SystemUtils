@@ -103,7 +103,8 @@ require *path*.
 
 - **scan-dir-report** *path*
 
-  Scan one directory and report the duplicates found within it in the same run.
+  Scan one directory and report the duplicates found within it in the same run. **Exits
+  3 if the walk of the tree stopped early,** so that part of it was not scanned.
 
 - **report-duplicates**
 
@@ -271,9 +272,12 @@ An invalid invocation exits non-zero, so a caller under `set -e` stops.
 
 - **3**
 
-  **scan**, **audit-db** or **verify-db** completed but could not read part of what it
-  was asked to read. **Part of the tree was recorded or checked and part was not.** The
-  counts and every failed path are on standard output.
+  **scan**, **scan-dir-report**, **audit-db** or **verify-db** completed but could not
+  read part of what it was asked to read. That includes a walk that stopped early: the
+  files already found are recorded, the rest of the tree is not, and **scan** lists the
+  directory as failed with \`**walk stopped early:** *reason*'**(#75).** **Part of the
+  tree was recorded or checked and part was not.** The counts and every failed path are
+  on standard output.
 
   3 is deliberately neither 1 nor 2: those mean nothing happened at all, while this
   leaves a partial index behind — and a partial index **cannot be detected afterwards,**
