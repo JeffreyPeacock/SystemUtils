@@ -242,14 +242,14 @@ Python 3.14.7 via the `sys-utils` pyenv-virtualenv, then
 `pip install -r requirements-dev.txt`.
 
 ```bash
-python -m pytest              # 425 tests; coverage on, floor enforced
+python -m pytest              # 423 tests; coverage on, floor enforced
 python -m pytest --no-cov -q  # faster while iterating
 python -m mypy src/           # must be clean
 ```
 
 ### Testing
 
-425 tests in 30 modules, no xfails. `pytest.ini` enables branch coverage, writes
+423 tests in 30 modules, no xfails (2 more in a checkout that has the gitignored `cmpdirs.sh`). `pytest.ini` enables branch coverage, writes
 `coverage.xml` and `test-results.xml`, and fails under **99%** — the current real
 measurement is 99.71%, which meets the 95% `docs/REQUIREMENTS.txt` has asked for
 since 2024. **Nothing is excluded from measurement**: `src/gui.py` was the only

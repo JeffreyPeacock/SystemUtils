@@ -106,7 +106,7 @@ rebuilds it in CI; its load-bearing assertion is that the archive holds no
 
 ## Testing
 
-**425 tests across 30 modules, all passing, no xfails.** Coverage is on by default
+**423 tests across 30 modules, all passing, no xfails** (in a fresh clone and in CI; a checkout that has the gitignored `cmpdirs.sh` collects 2 more, from `tests/test_script_conventions.py`). Coverage is on by default
 via `pytest.ini` (`--cov=src --cov-branch`), writes `coverage.xml` and
 `test-results.xml`, and enforces `--cov-fail-under=99` against a measured
 **99.71%** combined line+branch coverage.
