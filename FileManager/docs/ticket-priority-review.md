@@ -3,19 +3,18 @@
 The SystemUtils project board (#14) on GitHub holds the authoritative detail; this doc is the
 at-a-glance ordering view the board doesn't give cleanly.
 
-**Snapshot:** 2026-11-20 19:15 MST · 3 open · 3 Backlog
+**Snapshot:** 2026-11-21 20:16 MST · 2 open · 2 Backlog
 
 |  Pri   | #  |  Status |   Area   | Title | Note |
 |:------:|:--:|:-------:|:--------:|-------|------|
 | **p4** | 53 | Backlog |   GUI    | New utility: a GUI duplicate browser and editor,<br>separate from the CLI scanner | Carries the decision from #11 — the requirements<br>gap was resolved by making the GUI its own<br>application rather than revising the requirement.<br>Carries the defect from #3 as well: the old GUI<br>wrote `PY_VAR3`, the checkbox object, not a path,<br>so its `rm_commands.txt` was never runnable. Build<br>the path logic outside the widget tree this time.<br>Still needs a name and its own `component:` label. |
 | **p4** | 68 | Backlog | Database | verify-db loads every recorded row before hashing:<br>peak memory scales with the database | The counterpart to #67 in `verify-db` (#50):<br>`recorded_checksums` materialises every row before<br>the first file is hashed — measured<br>**~253 bytes per row**, so<br>**~1.31 GiB for /home2**. Less urgent than the<br>number looks, because `/home2` is btrfs with scrub<br>and the volume that actually needs an<br>application-level verify is the ext4 `BACKUP/00` at<br>~0.25 GiB; `--prefix` also bounds a run today. The<br>constraint on fixing it is that `with_connection`<br>closes the connection before returning, so no<br>generator may outlive it — keyset pagination on<br>`path` fits the existing `ORDER BY` and would make<br>a verify restartable, which #50 deferred. |
-| **p4** | 69 | Backlog | Database | A missing database directory exits 1 with a<br>traceback, and 1 means "invalid argument" | `mkdir -p /var/lib/filemanager` is currently an<br>undocumented prerequisite: without it the run<br>prints its header and then dies with an uncaught<br>`sqlite3.OperationalError` and a six-frame<br>traceback from inside the zipapp.<br>**It exits 1, which the contract defines as "a required argument was missing or invalid"**<br>— the argument was fine. The 1 is Python's default<br>for an uncaught exception, not a decision. It fails<br>before any hashing, so nothing is wasted. The<br>ticket's open decision is which code to use;<br>whatever is chosen goes in `usage()`, `main()`'s<br>docstring and the README table in the same change.<br>Must not create the directory silently. |
 
 ## Tally
 
 | Priority | p1 | p2 | p3 | p4 | p5 | — | Total |
 |----------|---:|---:|---:|---:|---:|--:|------:|
-| Open | 0 | 0 | 0 | 3 | 0 | 0 | 3 |
+| Open | 0 | 0 | 0 | 2 | 0 | 0 | 2 |
 
 &nbsp;
 

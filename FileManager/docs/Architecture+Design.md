@@ -1092,3 +1092,47 @@ removed. The fixture catches any test that builds there, not only this one.
   before the restore still loses the release bundle.
 
 **Related issues:** #78, #54, #62
+
+---
+
+## A database directory that is not ready exits 5, and is never created (#69)
+
+**Problem.** A `--db-path` whose directory did not exist failed inside sqlite3
+with `unable to open database file` and a traceback that named no directory.
+The run exited 1, which the contract defines as a missing or invalid argument.
+The argument was well formed. The 1 was Python's status for an uncaught
+exception, so the code had not chosen it.
+
+**Decision.** `main()` checks the database's directory after the run header
+and before `initialize_db`. Four cases each get a message that names the
+directory: it does not exist, it is not a directory, it cannot be written when
+the database file must be created, and it cannot be checked (for example, a
+parent directory with no search permission). All four exit 5, a new code that
+means "the environment the run needs is not there, and nothing was read or
+recorded". The owner chose 5 on 2026-11-21. The messages are different
+because the fixes are different. The exit code is the same because a caller
+does the same thing in each case: it stops and fixes the host.
+
+The check uses `os.stat` and catches `FileNotFoundError` and
+`NotADirectoryError` as "does not exist". Any other `OSError` is "cannot
+check". `os.path.isdir` was not used, because it returns False for any error,
+so it reports an unsearchable parent as a missing directory.
+
+The check tests write permission only when the database file does not exist
+yet. The report actions read an existing database, and a database in a
+read-only directory can be read today, so a stricter check would stop a run
+that works.
+
+**What was ruled out.**
+
+- *Creating the directory.* The database is the index for terabytes of
+  scanned data, and its location is an operational decision. A typo in a path
+  must not create a directory.
+- *Exit 1.* 1 tells the operator that the command line was wrong. It was not.
+- *Exit 3.* 3 means that part of the tree was recorded and part was not. Here
+  nothing was recorded.
+- *Catching the sqlite3 error after the fact.* The error text does not say
+  which directory, or whether the cause is a missing directory or a
+  permission problem.
+
+**Related issues:** #69
