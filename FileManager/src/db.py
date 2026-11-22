@@ -158,39 +158,97 @@ def get_all_files_info(db_path):
         description="read all file info",
     )
 
-def recorded_checksums(db_path, prefix=None):
-    """Every (path, md5sum) the database holds, optionally under one prefix.
+# How many rows `iter_recorded_checksums` reads per query (#68). At the measured
+# ~253 bytes per (path, md5sum) row, a page is about 2.5 MB. Large enough that
+# the per-query cost is small beside hashing the files, small enough that memory
+# follows the page and not the database.
+VERIFY_PAGE_SIZE = 10_000
+
+
+def recorded_checksums_page(db_path, prefix=None, after=None,
+                            limit=VERIFY_PAGE_SIZE):
+    """At most `limit` (path, md5sum) rows ordered by path, after `after`.
 
     The read side of #50. `audit_db` and `scan` both decide what to do from
     (size, mtime) and never look at the stored checksum, so this is the only
     query that returns it in bulk -- verifying it is the one job a stored
     checksum exists for.
 
+    One page per call, through `with_connection`, so no cursor outlives its
+    connection (#68). Keyset pagination: the next page starts after the last
+    path of this one. `path` is UNIQUE and the order is by path, so the pages
+    neither overlap nor skip a row, and a row inserted while the pages are read
+    is either in a later page or before the current position -- never read
+    twice. OFFSET was not used: it rereads every earlier row for each page.
+
     Ordered by path so a prefix-scoped run covers a predictable subtree and two
-    runs over the same prefix report in the same order, which matters when the
-    output is diffed between runs.
+    runs over the same prefix read in the same order.
 
     Args:
         db_path (str): The path to the database file.
         prefix (str, optional): Only rows whose path starts with this. The
             database may hold millions of rows across several volumes, and
             verifying all of them takes hours (#50).
+        after (str, optional): Only rows whose path sorts after this one.
+            None starts at the beginning.
+        limit (int): The most rows to return.
 
     Returns:
-        list: (path, md5sum) tuples, ordered by path.
+        list: up to `limit` (path, md5sum) tuples, ordered by path. Fewer than
+        `limit` means this was the last page.
     """
+    where, params = [], []
     if prefix:
-        return _read_all(
-            db_path,
-            "SELECT path, md5sum FROM files WHERE path LIKE ? ORDER BY path",
-            (f"{prefix}%",),
-            description="read recorded checksums under a prefix",
-        )
+        where.append("path LIKE ?")
+        params.append(f"{prefix}%")
+    if after is not None:
+        where.append("path > ?")
+        params.append(after)
+    clause = f" WHERE {' AND '.join(where)}" if where else " WHERE path IS NOT NULL"
     return _read_all(
         db_path,
-        "SELECT path, md5sum FROM files ORDER BY path",
-        description="read recorded checksums",
+        f"SELECT path, md5sum FROM files{clause} ORDER BY path LIMIT ?",
+        (*params, limit),
+        description="read a page of recorded checksums",
     )
+
+
+def iter_recorded_checksums(db_path, prefix=None, page_size=VERIFY_PAGE_SIZE):
+    """Every (path, md5sum) the database holds, one page in memory at a time.
+
+    A generator, but not a lazy handle: each page is a complete
+    `recorded_checksums_page` call, so the connection is closed before any row
+    is yielded, and no connection is open between pages (#68). Before #68 the
+    whole result set was read into one list -- about 1.31 GiB for /home2 --
+    before the first file was hashed.
+
+    A row with a NULL path cannot be paged by path, so those rows are read first
+    in one query of their own. Nothing in this program writes one, but the
+    schema allows it, and before #68 verify-db reported such a row as
+    unreadable. Dropping it without a word would turn "could not check" into
+    nothing at all. A prefix excludes them, as `LIKE` always did.
+
+    Args:
+        db_path (str): The path to the database file.
+        prefix (str, optional): Only rows whose path starts with this.
+        page_size (int): Rows per query.
+
+    Yields:
+        (path, md5sum) tuples, ordered by path after any NULL-path rows.
+    """
+    if not prefix:
+        yield from _read_all(
+            db_path,
+            "SELECT path, md5sum FROM files WHERE path IS NULL",
+            description="read recorded checksums with no path",
+        )
+    after = None
+    while True:
+        page = recorded_checksums_page(db_path, prefix, after, page_size)
+        yield from page
+        if len(page) < page_size:
+            return
+        after = page[-1][0]
 
 
 def store_file_info(db_path, path, md5sum):

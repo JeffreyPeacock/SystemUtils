@@ -512,11 +512,6 @@ additionally makes it an input to the next walk.
 Known and open, with the issue numbers in [the SystemUtils
 board](https://github.com/users/JeffreyPeacock/projects/14):
 
-- **verify-db materialises every row (#68)**
-
-  The recorded paths are read into a list before any hashing starts, rather than
-  streamed. Use **--prefix** to bound it.
-
 - **report-files-for-prefix is undocumented and validated late**
 
   The action is accepted by the parser but does not appear in the program's own **help**

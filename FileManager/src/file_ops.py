@@ -3,11 +3,14 @@ import os
 import stat
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import (
+    ALL_COMPLETED, FIRST_COMPLETED, ThreadPoolExecutor, as_completed, wait,
+)
 from queue import Queue
 
 from src.db import (
-    store_file_info, check_for_duplicates, get_file_info, recorded_checksums,
+    store_file_info, check_for_duplicates, get_file_info,
+    count_paths_with_prefix, iter_recorded_checksums,
 )
 from src.md5sum import compute_md5
 from src.regular_files import (
@@ -42,6 +45,12 @@ MAX_FAILURES_LISTED = 20
 SCAN_QUEUE_MEMORY_BYTES = 8 * 1024 * 1024
 BYTES_PER_QUEUED_PATH = 122
 SCAN_QUEUE_MAXSIZE = SCAN_QUEUE_MEMORY_BYTES // BYTES_PER_QUEUED_PATH  # 68,759
+
+# The most files verify-db has submitted to its pool and not yet collected, per
+# worker (#68). Before #68 it submitted one future per recorded row before
+# collecting any, so the futures grew with the database as the row list did.
+# A few per worker keeps every worker busy while one result is collected.
+VERIFY_IN_FLIGHT_PER_WORKER = 4
 
 
 class ScanTally:
@@ -419,20 +428,22 @@ def verify_db(db_path, num_threads=4, prefix=None, tally=None):
         VerifyTally: the counts and the findings.
     """
     tally = VerifyTally() if tally is None else tally
-    rows = recorded_checksums(db_path, prefix)
 
+    # A count, not the rows: the rows are read a page at a time below (#68).
+    # It is for the log only. A scan running at the same time can change the
+    # number before the pages are read, and the summary counts what was
+    # actually checked.
     logging.info(
-        f"VERIFY {len(rows)} recorded path(s)"
-        + (f" under {prefix}" if prefix else "")
+        f"VERIFY {count_paths_with_prefix(db_path, prefix or '')} "
+        f"recorded path(s)" + (f" under {prefix}" if prefix else "")
     )
 
-    with ThreadPoolExecutor(max_workers=num_threads) as executor:
-        futures = {
-            executor.submit(verify_one_recording, path, stored, tally): path
-            for path, stored in rows
-        }
-        for future in as_completed(futures):
-            path = futures[future]
+    in_flight = {}
+
+    def collect(return_when):
+        done, _ = wait(in_flight, return_when=return_when)
+        for future in done:
+            path = in_flight.pop(future)
             try:
                 future.result()
             except Exception as e:
@@ -440,5 +451,14 @@ def verify_db(db_path, num_threads=4, prefix=None, tally=None):
                 # here means something else broke -- it is still not a pass.
                 logging.error(f"VERIFY failed {path}: {e}")
                 tally.record_unreadable(path, e)
+
+    limit = max(1, num_threads) * VERIFY_IN_FLIGHT_PER_WORKER
+    with ThreadPoolExecutor(max_workers=num_threads) as executor:
+        for path, stored in iter_recorded_checksums(db_path, prefix):
+            if len(in_flight) >= limit:
+                collect(FIRST_COMPLETED)
+            in_flight[executor.submit(verify_one_recording, path, stored,
+                                      tally)] = path
+        collect(ALL_COMPLETED)
 
     return tally

@@ -749,8 +749,9 @@ prefix was chosen. A resume log is state that can go stale against the database
 — and `scan-unique-files` already demonstrates the second problem with the idea:
 its `.processed_files.txt` lands *inside* the tree being scanned and is then
 scanned like any other file. A prefix is stateless, and the operator picks the
-subtree. `recorded_checksums` orders by path so two runs over one prefix report
-in the same order and their output can be diffed.
+subtree. The rows are read in path order (`iter_recorded_checksums` since #68,
+`recorded_checksums` before it), so two runs over one prefix read in the same
+order.
 
 ### What the tests had to prove
 
@@ -1136,3 +1137,56 @@ that works.
   permission problem.
 
 **Related issues:** #69
+
+---
+
+## verify-db reads the database a page at a time (#68)
+
+**Problem.** `verify_db` read every recorded (path, md5sum) into one list, then
+submitted one future per row before it collected any result. Both grew with the
+database, and both reached their peak before the first file was hashed. The
+ticket measured 253 bytes per row for the list, which is about 1.31 GiB for
+/home2. Measured under `tracemalloc` with the futures included, the old code
+used about 2,000 bytes per row: 41 MB at 20,000 rows and 120 MB at 60,000.
+
+**Decision.** Two changes, because either one alone leaves memory that grows
+with the database.
+
+- `db.iter_recorded_checksums` reads the rows in pages of `VERIFY_PAGE_SIZE`
+  (10,000) with keyset pagination: each page starts after the last path of the
+  page before it. Each page is one `recorded_checksums_page` call through
+  `with_connection`, so the connection is closed before any row of that page
+  is handled. `path` is UNIQUE and the order is by path, so the pages do not
+  overlap or skip a row.
+- `verify_db` keeps at most `VERIFY_IN_FLIGHT_PER_WORKER` (4) files per worker
+  submitted and not yet collected. When the limit is reached, it waits for one
+  to finish.
+
+Peak memory is now about 4 MiB at 20,000, 60,000 and 200,000 rows.
+
+A row with a NULL path cannot be reached by paging on path. Nothing in the
+program writes one, but the schema allows it, and the old code reported such a
+row as unreadable. So `iter_recorded_checksums` reads NULL-path rows first, in
+one query of their own, when no prefix is given. Without that query the row
+would be dropped with no report, which turns "could not check" into nothing.
+
+The log line still gives the number of rows before the run starts. It now
+comes from a `COUNT(*)` query, so it can differ from the number checked if a
+scan writes to the database during the verify. The summary counts what was
+checked.
+
+**What was ruled out.**
+
+- *A generator that holds one connection open for the whole run.*
+  `with_connection` closes its connection before it returns, and its
+  docstring forbids returning a lazy handle. One connection held for hours
+  would also hold a read transaction for hours.
+- *`LIMIT`/`OFFSET`.* Each page rereads every earlier row, so the total work
+  grows with the square of the row count.
+- *Keyset on `id`.* It does not keep the path order that a prefix-scoped run
+  documents.
+
+The pagination also makes a verify restartable from a path, which #50 deferred.
+No restart option is added here.
+
+**Related issues:** #68, #50, #10, #67
