@@ -1,4 +1,5 @@
 import os
+import stat
 import sys
 
 # Add the project root directory to the Python path
@@ -86,6 +87,11 @@ def usage():
                             longer match its stored checksum. Not 3: 3 means
                             part of the answer is unknown, 4 means the answer is
                             known and bad.
+        5                   the environment the run needs is not there: the
+                            database's directory is missing, is not a
+                            directory, cannot be written to create the
+                            database, or cannot be checked. Nothing was read
+                            or recorded. The message names the directory.
 
     Options:
         --version           Print the commit this code was built from, the
@@ -211,6 +217,54 @@ EXIT_INCOMPLETE = 3
 # keeps being fixed for (#50, and #41 before it).
 EXIT_MISMATCH = 4
 
+# The environment the run needs is not there, so nothing was read or recorded
+# (#69). Deliberately NOT 1: 1 means the operator typed something invalid, and
+# a well-formed --db-path whose directory has not been created is not that.
+# Before #69 this case exited 1 only because 1 is Python's status for an
+# uncaught exception -- the code never chose it.
+EXIT_ENVIRONMENT = 5
+
+
+def _database_directory_problem(db_path):
+    """Why the database cannot be opened where `db_path` puts it, or None.
+
+    Checked before `initialize_db`, which would otherwise die inside sqlite3
+    with `unable to open database file` and a traceback that names no
+    directory (#69). Each outcome gets its own message, because each has a
+    different fix:
+
+      * the directory does not exist -> create it. **It is never created
+        here**: where the index lives is an operational decision, and a typo in
+        a path must not invent a directory.
+      * it exists but is not a directory.
+      * the database file does not exist yet and the directory cannot be
+        written, so the file cannot be created there. A permission problem is
+        not a missing directory.
+      * the directory could not be checked at all -- an ancestor that cannot
+        be searched, for example. That is reported as itself, not folded into
+        "does not exist", which is what `os.path.isdir` would have answered.
+
+    Writability is checked only when the file must be created. An existing
+    database in a read-only directory can still be read by the report actions,
+    and refusing that would break a run that works today.
+    """
+    directory = os.path.abspath(os.path.dirname(db_path) or '.')
+    try:
+        mode = os.stat(directory).st_mode
+    except (FileNotFoundError, NotADirectoryError):
+        return (f"database directory does not exist: {directory}\n"
+                f"Create it first (mkdir -p {directory}). "
+                f"FileManager does not create it.")
+    except OSError as exc:
+        return f"cannot check database directory {directory}: {exc}"
+    if not stat.S_ISDIR(mode):
+        return f"database directory is not a directory: {directory}"
+    if (not os.path.exists(db_path)
+            and not os.access(directory, os.W_OK | os.X_OK)):
+        return (f"database directory is not writable by uid {os.geteuid()}, "
+                f"so the database cannot be created there: {directory}")
+    return None
+
 
 def _print_run_header(action, paths, db_path, threads):
     """Print what this run is, before it does anything (#54 requirement 10).
@@ -310,6 +364,11 @@ def main():
             file (#50), and it is separate from 3 for the same kind of reason:
             3 says part of the answer is unknown, 4 says the answer is known and
             bad. A mismatch outranks an unreadable file when both happen.
+
+            5 is an environment the run needs and does not have: the
+            database's directory is missing, unwritable or uncheckable (#69).
+            Nothing was read or recorded. Not 1, because the argument was well
+            formed.
     """
     parser = argparse.ArgumentParser(
         description='File Manager Application', add_help=False
@@ -421,6 +480,13 @@ def main():
     # Before initialize_db, which creates the file: the header describes a run
     # that is about to touch something, so it goes out before the first effect.
     _print_run_header(args.action, args.path, db_path, args.threads)
+
+    # After the header, so the log shows which database was meant; before
+    # initialize_db, which is the first thing that would fail (#69).
+    problem = _database_directory_problem(db_path)
+    if problem is not None:
+        print(f"Error: {problem}")
+        return EXIT_ENVIRONMENT
 
     initialize_db(db_path)
 

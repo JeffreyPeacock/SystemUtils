@@ -291,6 +291,13 @@ An invalid invocation exits non-zero, so a caller under `set -e` stops.
   and bad, and an operator does something different about each. A mismatch outranks an
   unreadable file when both occur in one run.
 
+- **5**
+
+  The environment the run needs is not there: the directory that holds the database does
+  not exist, is not a directory, cannot be written when the database file has to be
+  created, or cannot be checked at all (#69). **Nothing was read or recorded.** The
+  message names the directory. Not 1: the argument was well formed.
+
 ## OUTPUT
 
 **The split between the two streams is a contract, not a convention.** A scheduled scan
@@ -355,11 +362,14 @@ refused outright rather than printed, because this output is written to disk.
 
   The bundle, built by *scripts/build-pyz.sh*.
 
-**Two notes on the database file.** Its parent directory is **not** created for you:
-name a directory that does not exist and the run fails with an uncaught SQLite error
-rather than a message (see **BUGS**). And every action except **help** and **--version**
-opens and initialises the database before dispatching, so even **compare-directories**,
-which never queries it, creates an empty one as a side effect.
+**Two notes on the database file.** Its parent directory is **not** created for you,
+because where the index lives is an operational decision. Name a directory that does not
+exist and the run prints its header, then one line naming the directory, and exits 5. A
+directory that cannot be written is refused only when the database file does not exist
+yet, so the report actions still read an existing database from a read-only directory.
+And every action except **help** and **--version** opens and initialises the database
+before dispatching, so even **compare-directories**, which never queries it, creates an
+empty one as a side effect.
 
 ## ENVIRONMENT
 
@@ -506,12 +516,6 @@ board](https://github.com/users/JeffreyPeacock/projects/14):
 
   The recorded paths are read into a list before any hashing starts, rather than
   streamed. Use **--prefix** to bound it.
-
-- **A missing database directory is reported as an invalid argument (#69)**
-
-  Naming a **--db-path** whose parent directory does not exist produces an uncaught
-  **sqlite3.OperationalError** and a traceback, exiting 1 — a status this page defines
-  as a bad argument. Create the directory first.
 
 - **report-files-for-prefix is undocumented and validated late**
 

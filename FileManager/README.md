@@ -131,6 +131,13 @@ All the per-file logging goes to stderr, so the summary survives the
 | 2 | `argparse` rejected the command line |
 | 3 | it completed but **could not read part of the tree** |
 | 4 | `verify-db` found a file whose contents no longer match its stored checksum |
+| 5 | the database's directory is missing, is not a directory, cannot be written to create the database, or cannot be checked. Nothing was read or recorded |
+
+**The database's directory is never created for you.** Where the index lives is
+an operational decision, so `mkdir -p /var/lib/filemanager` comes first. A run
+without it prints the header, then one line naming the directory, and exits 5
+(#69). Before #69 it died with a traceback and exited 1, which means a bad
+argument.
 
 **3 is the one that matters for an unattended run.** Some files were recorded and
 some were not, and that gap cannot be found afterwards: the database looks the
@@ -247,16 +254,16 @@ Python 3.14.7 via the `sys-utils` pyenv-virtualenv, then
 `pip install -r requirements-dev.txt`.
 
 ```bash
-python -m pytest              # 423 tests; coverage on, floor enforced
+python -m pytest              # 434 tests; coverage on, floor enforced
 python -m pytest --no-cov -q  # faster while iterating
 python -m mypy src/           # must be clean
 ```
 
 ### Testing
 
-423 tests in 30 modules, no xfails (2 more in a checkout that has the gitignored `cmpdirs.sh`). `pytest.ini` enables branch coverage, writes
+434 tests in 31 modules, no xfails (2 more in a checkout that has the gitignored `cmpdirs.sh`). `pytest.ini` enables branch coverage, writes
 `coverage.xml` and `test-results.xml`, and fails under **99%** — the current real
-measurement is 99.75%, which meets the 95% `docs/REQUIREMENTS.txt` has asked for
+measurement is 99.76%, which meets the 95% `docs/REQUIREMENTS.txt` has asked for
 since 2024. **Nothing is excluded from measurement**: `src/gui.py` was the only
 omission and it left with the GUI in #51, so `.coveragerc` has no `omit` key at
 all. The gap was closed by epic
@@ -302,11 +309,10 @@ filtered by `component:file-manager`. The GUI tickets #3 and #11 closed with
 #51, when the GUI left this project for one of its own (#53).
 
 Worth reading before running a baseline scan of a multi-million-file tree.
-Neither blocks such a run; both were found while checking whether one was
+It does not block such a run; it was found while checking whether one was
 ready:
 
 - **#68** — `verify-db` loads every recorded row before hashing anything: ~253 bytes per row. Use `--prefix` to bound a run until that is fixed.
-- **#69** — the database's parent directory must exist. Without it the run dies with a traceback and exits 1, which this tool's contract defines as an invalid argument.
 
 Eight silent-wrong-answer paths are fixed: #1 and #2; #43, where
 `scan-dir-report` never returned at all until its shutdown was tested; #41,
