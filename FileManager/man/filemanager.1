@@ -445,6 +445,14 @@ found a recorded file whose contents no longer match its stored checksum.
 Not 3: 3 means part of the answer is unknown, 4 means the answer is known and
 bad, and an operator does something different about each.
 A mismatch outranks an unreadable file when both occur in one run.
+.TP
+.B 5
+The environment the run needs is not there: the directory that holds the
+database does not exist, is not a directory, cannot be written when the database
+file has to be created, or cannot be checked at all (#69).
+.B Nothing was read or recorded.
+The message names the directory.
+Not 1: the argument was well formed.
 .
 .SH OUTPUT
 .B The split between the two streams is a contract, not a convention.
@@ -533,9 +541,12 @@ The bundle, built by
 .B Two notes on the database file.
 Its parent directory is
 .B not
-created for you: name a directory that does not exist and the run fails with an
-uncaught SQLite error rather than a message (see
-.BR BUGS ).
+created for you, because where the index lives is an operational decision.
+Name a directory that does not exist and the run prints its header, then one
+line naming the directory, and exits 5.
+A directory that cannot be written is refused only when the database file does
+not exist yet, so the report actions still read an existing database from a
+read-only directory.
 And every action except
 .B help
 and
@@ -717,14 +728,6 @@ streamed.
 Use
 .B \-\-prefix
 to bound it.
-.TP
-.B A missing database directory is reported as an invalid argument (#69)
-Naming a
-.B \-\-db\-path
-whose parent directory does not exist produces an uncaught
-.B sqlite3.OperationalError
-and a traceback, exiting 1 \(em a status this page defines as a bad argument.
-Create the directory first.
 .TP
 .B report\-files\-for\-prefix is undocumented and validated late
 The action is accepted by the parser but does not appear in the program's own
