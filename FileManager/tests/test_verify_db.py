@@ -23,7 +23,7 @@ from pathlib import Path
 import pytest
 
 from src import file_ops
-from src.db import get_md5_by_path, initialize_db, recorded_checksums
+from src.db import get_md5_by_path, initialize_db, iter_recorded_checksums
 from src.file_ops import VerifyTally, scan, verify_db, verify_one_recording
 
 PROJECT = Path(__file__).resolve().parent.parent
@@ -59,7 +59,7 @@ def scanned(tmp_path):
     db_path = str(tmp_path / "verify.db")
     initialize_db(db_path)
     scan(str(tree), db_path, 2)
-    assert len(recorded_checksums(db_path)) == 3
+    assert len(list(iter_recorded_checksums(db_path))) == 3
     return tree, db_path
 
 
@@ -220,7 +220,7 @@ def test_a_prefix_limits_what_is_verified(tmp_path):
     assert everything.mismatched == 1
 
 
-def test_recorded_checksums_orders_by_path(tmp_path):
+def test_iter_recorded_checksums_orders_by_path(tmp_path):
     """Two runs over one prefix report in the same order, so output diffs."""
     tree = tmp_path / "tree"
     tree.mkdir()
@@ -230,7 +230,7 @@ def test_recorded_checksums_orders_by_path(tmp_path):
     initialize_db(db_path)
     scan(str(tree), db_path, 2)
 
-    paths = [p for p, _ in recorded_checksums(db_path)]
+    paths = [p for p, _ in iter_recorded_checksums(db_path)]
     assert paths == sorted(paths)
 
 

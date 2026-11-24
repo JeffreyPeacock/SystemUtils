@@ -115,7 +115,7 @@ if any file under `dist/` was created, changed or removed.
 
 ## Testing
 
-**434 tests across 31 modules, all passing, no xfails** (in a fresh clone and in CI; a checkout that has the gitignored `cmpdirs.sh` collects 2 more, from `tests/test_script_conventions.py`). Coverage is on by default
+**447 tests across 32 modules, all passing, no xfails** (in a fresh clone and in CI; a checkout that has the gitignored `cmpdirs.sh` collects 2 more, from `tests/test_script_conventions.py`). Coverage is on by default
 via `pytest.ini` (`--cov=src --cov-branch`), writes `coverage.xml` and
 `test-results.xml`, and enforces `--cov-fail-under=99` against a measured
 **99.76%** combined line+branch coverage.
@@ -225,7 +225,7 @@ regenerates the numbered files.
 beyond argument validation. Below it is a flat module layer, no classes:
 
 - `src/db.py` — the only module that calls `sqlite3.connect`. Owns the schema, every query, and the lock-retry behaviour, all through one gateway: `with_connection(db_path, work, commit=...)`. Also owns `UniquenessUnknown`, raised when a file's uniqueness cannot be determined — never answered as `False`, which is a verdict (#41).
-- `src/file_ops.py` — directory walking and the decision of whether a file needs hashing. `process_file` is the core routine. Also `verify_db` and `VerifyTally` (#50): the orchestration lives here because it is a decision about hashing, while its one bulk query, `db.recorded_checksums`, lives in `db.py` with every other statement.
+- `src/file_ops.py` — directory walking and the decision of whether a file needs hashing. `process_file` is the core routine. Also `verify_db` and `VerifyTally` (#50): the orchestration lives here because it is a decision about hashing, while its bulk read, `db.iter_recorded_checksums`, lives in `db.py` with every other statement.
 - `src/reporting.py` — formats and prints; every query it runs is a `db.py` function (#10). It must not import `sqlite3`, and `tests/test_db_owns_the_connection.py` fails if it does.
 - `src/version.py`, `src/build_info.py` — what `--version` prints. `build_info.py` is **data only**, because the build overwrites it; every line of logic and the live-git fallback are in `version.py` (#62).
 - `src/regular_files.py` — **the one definition of which files are read** (#74): `walk_regular_files`, `require_regular_file`, `NotARegularFile`, and `SkippedEntries`, the per-kind count. Every walk and every hash goes through it.
@@ -284,6 +284,17 @@ for 5.58M files). The sentinel puts can block too, and still complete, because
 the workers keep draining until each has its sentinel -- tested with more
 workers than slots in `tests/test_scan_queue_bound.py`. `audit_db` and
 `scan_and_report_unique_files` use `ThreadPoolExecutor` directly.
+
+**`verify_db` reads a page at a time and bounds its pool** (#68).
+`iter_recorded_checksums` reads `VERIFY_PAGE_SIZE` (10,000) rows per query, keyset on
+`path`, each page one `with_connection` call, so no connection is open while a row is
+handled. NULL-path rows are read first in a query of their own, because paging by path
+cannot reach them. The pool holds at most `VERIFY_IN_FLIGHT_PER_WORKER` (4) files per
+worker. Before #68 the rows were one list and every row had a future before the first
+was collected: under `tracemalloc`, about 2,000 bytes per row, so the ticket's 253
+bytes per row counted the list and not the futures. Peak is now about 4 MiB at 20,000,
+60,000 and 200,000 rows. `tests/test_verify_db_memory.py`; its pool and peak tests
+both fail against the old code.
 
 No connection is shared between threads, and none is reused: `with_connection`
 opens one, runs the callable it was given, and closes. It retries up to
@@ -389,6 +400,5 @@ Desktop-Ops installer's gate is cleared. Requirement 6 (dropping the
 `sys.path.append` in `main.py`) was **rejected by the owner**: it stays.
 
 Also open: **#53** (the GUI as its own application, carrying the decision from
-#11 and the path-handling bug from #3), **#68** (`verify-db` memory scales with
-the database). #69 closed with exit 5 for a missing database directory. #60 closed with the `AuditCounts`
+#11 and the path-handling bug from #3), #68 closed with `verify-db` reading the database a page at a time. #69 closed with exit 5 for a missing database directory. #60 closed with the `AuditCounts`
 TypedDict.
