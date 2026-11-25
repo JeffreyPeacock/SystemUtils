@@ -3,17 +3,19 @@
 The SystemUtils project board (#14) on GitHub holds the authoritative detail; this doc is the
 at-a-glance ordering view the board doesn't give cleanly.
 
-**Snapshot:** 2026-11-24 11:42 MST · 1 open · 1 Backlog
+**Snapshot:** 2026-11-25 13:35 MST · 3 open · 3 Backlog
 
-|  Pri   | #  |  Status |   Area   | Title | Note |
-|:------:|:--:|:-------:|:--------:|-------|------|
-| **p4** | 53 | Backlog |   GUI    | New utility: a GUI duplicate browser and editor,<br>separate from the CLI scanner | Carries the decision from #11 — the requirements<br>gap was resolved by making the GUI its own<br>application rather than revising the requirement.<br>Carries the defect from #3 as well: the old GUI<br>wrote `PY_VAR3`, the checkbox object, not a path,<br>so its `rm_commands.txt` was never runnable. Build<br>the path logic outside the widget tree this time.<br>Still needs a name and its own `component:` label. |
+|  Pri   | #  |  Status |    Area   | Title | Note |
+|:------:|:--:|:-------:|:---------:|-------|------|
+| **p2** | 82 | Backlog | Reporting | A file name that is not valid UTF-8 crashes the<br>output and turns exit 3 into exit 1; report such<br>names in a form that can be used to rename them | Found by the /home2 baseline scan: it finished<br>after three days, then `print()` raised<br>`UnicodeEncodeError` on a failed path in a UTF-8<br>locale, so the run exited 1, not 3. The owner wants<br>each such name listed as a `$'...'` string that<br>`mv` accepts, so the file can be renamed. Fix this<br>before #83: the rename is the workaround for #83. |
+| **p3** | 83 | Backlog |  Database | A file whose name is not valid UTF-8 cannot be<br>recorded: sqlite3 rejects the path | sqlite3 encodes a bound `str` as strict UTF-8, so<br>the path is counted as failed and never indexed. It<br>is reported, not silent, and exits 3. Needs an<br>owner decision on the storage form (BLOB, an<br>escaped text form, or refuse and rename) before any<br>code. Renaming the file with #82's output is the<br>workaround. |
+| **p4** | 53 | Backlog |    GUI    | New utility: a GUI duplicate browser and editor,<br>separate from the CLI scanner | Carries the decision from #11 — the requirements<br>gap was resolved by making the GUI its own<br>application rather than revising the requirement.<br>Carries the defect from #3 as well: the old GUI<br>wrote `PY_VAR3`, the checkbox object, not a path,<br>so its `rm_commands.txt` was never runnable. Build<br>the path logic outside the widget tree this time.<br>Still needs a name and its own `component:` label. |
 
 ## Tally
 
 | Priority | p1 | p2 | p3 | p4 | p5 | — | Total |
 |----------|---:|---:|---:|---:|---:|--:|------:|
-| Open | 0 | 0 | 0 | 1 | 0 | 0 | 1 |
+| Open | 0 | 1 | 1 | 1 | 0 | 0 | 3 |
 
 &nbsp;
 
