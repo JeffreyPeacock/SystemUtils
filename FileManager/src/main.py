@@ -8,6 +8,7 @@ sys.path.append(
 )
 
 import datetime
+import io
 import logging
 import argparse
 from src.db import (
@@ -28,7 +29,7 @@ from src.reporting import (
     # enough for the file to be replaced under it.
     report_duplicates_for_prefix, report_files_for_prefix,
 )
-from src.utils import report_settings
+from src.utils import display_path, report_settings
 from src.version import NAME, TIME_FORMAT, describe, one_line
 
 # Configure logging
@@ -293,8 +294,8 @@ def _print_run_header(action, paths, db_path, threads):
         ('started', started),
         ('version', one_line()),
         ('action', action),
-        ('paths', paths if paths else '(none given)'),
-        ('db', db_path),
+        ('paths', display_path(paths) if paths else '(none given)'),
+        ('db', display_path(db_path)),
         ('threads', str(threads)),
     ]
     width = max(len(label) for label, _ in fields)
@@ -338,7 +339,7 @@ def _print_audit_summary(counts: AuditCounts) -> None:
     if failures:
         print(f"failed ({counts['failed']}):")
         for path, message in failures[:20]:
-            print(f"  {path}: {message}")
+            print(f"  {display_path(path)}: {message}")
         if len(failures) > 20:
             print(f"  ... and {len(failures) - 20} more; each is on an ERROR line in the log")
 
@@ -370,6 +371,15 @@ def main():
             Nothing was read or recorded. Not 1, because the argument was well
             formed.
     """
+    # No print may end a run (#82). A file name that is not valid UTF-8 holds
+    # surrogates, and in a UTF-8 locale stdout encodes in strict mode, so one
+    # such name in a summary raised UnicodeEncodeError after a three-day scan
+    # had finished -- and the run exited 1, not 3. The summaries and the
+    # header print such names with `display_path`. This covers every other
+    # print. stderr already uses backslashreplace, so the log never crashed.
+    if isinstance(sys.stdout, io.TextIOWrapper):
+        sys.stdout.reconfigure(errors='backslashreplace')
+
     parser = argparse.ArgumentParser(
         description='File Manager Application', add_help=False
     )

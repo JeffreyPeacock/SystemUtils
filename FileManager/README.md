@@ -124,6 +124,17 @@ failed (2):
 All the per-file logging goes to stderr, so the summary survives the
 `2>/dev/null` a scheduled scan uses to suppress it.
 
+A file name that is not valid UTF-8 cannot be recorded yet (#83). The scan
+counts each such file as failed and lists the names to rename in their own
+block, as bash `$'...'` strings that hold the exact bytes. You can paste a name
+into `mv` (#82):
+
+```
+names not valid UTF-8 (1), so 3 file(s) were not recorded; rename these to record them:
+  $'/home2/dir\x82'  (3 files)
+$ mv $'/home2/dir\x82' /home2/dir-renamed
+```
+
 | Exit | Meaning |
 |---|---|
 | 0 | the action completed and read everything it was asked to read, or help was requested |
@@ -254,16 +265,16 @@ Python 3.14.7 via the `sys-utils` pyenv-virtualenv, then
 `pip install -r requirements-dev.txt`.
 
 ```bash
-python -m pytest              # 447 tests; coverage on, floor enforced
+python -m pytest              # 467 tests; coverage on, floor enforced
 python -m pytest --no-cov -q  # faster while iterating
 python -m mypy src/           # must be clean
 ```
 
 ### Testing
 
-447 tests in 32 modules, no xfails (2 more in a checkout that has the gitignored `cmpdirs.sh`). `pytest.ini` enables branch coverage, writes
+467 tests in 33 modules, no xfails (2 more in a checkout that has the gitignored `cmpdirs.sh`). `pytest.ini` enables branch coverage, writes
 `coverage.xml` and `test-results.xml`, and fails under **99%** — the current real
-measurement is 99.76%, which meets the 95% `docs/REQUIREMENTS.txt` has asked for
+measurement is 99.77%, which meets the 95% `docs/REQUIREMENTS.txt` has asked for
 since 2024. **Nothing is excluded from measurement**: `src/gui.py` was the only
 omission and it left with the GUI in #51, so `.coveragerc` has no `omit` key at
 all. The gap was closed by epic
