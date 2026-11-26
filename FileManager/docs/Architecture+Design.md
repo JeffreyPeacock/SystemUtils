@@ -1190,3 +1190,51 @@ The pagination also makes a verify restartable from a path, which #50 deferred.
 No restart option is added here.
 
 **Related issues:** #68, #50, #10, #67
+
+---
+
+## A file name that is not valid UTF-8 cannot stop a run, and is listed to be renamed (#82)
+
+**Problem.** Linux allows any bytes except `/` and NUL in a file name. Python
+decodes a byte that is not valid UTF-8 with `surrogateescape`, so the byte 0x82
+becomes the character U+DC82. With a UTF-8 locale, Python writes stdout in
+strict mode, and such a character raises `UnicodeEncodeError`. The /home2
+baseline scan ran for three days, then crashed in the summary print on one
+such path. The run exited 1, not 3. The summary was lost, and the 174 failed
+paths were not printed. In the C locale, Python uses `surrogateescape` on
+stdout, so the same scan exited 3. The fault depended on the locale of the
+caller.
+
+**Decision.** Two layers.
+
+- `main()` sets stdout to `errors='backslashreplace'` before it prints
+  anything. No output can then raise, whatever the locale and whatever path
+  reaches a `print`.
+- The header and the summaries of `scan`, `audit-db` and `verify-db` print a
+  path through `utils.display_path`. A valid name prints unchanged. Any other
+  name prints as a bash `$'...'` string that holds its exact bytes, for
+  example `$'/home2/caf\x82.txt'`. The owner asked for this form, because the
+  operator can paste it into `mv` to rename the file.
+
+The scan summary lists these names in their own block, before the other
+failures, and does not truncate it. Each name is the shortest leading part of
+the path that ends in a component that is not valid UTF-8. So a directory with
+such a name is listed once, with the number of files under it, and one `mv`
+fixes all of them. The other failures follow as `other failures (N):`, and that
+list is still truncated at 20.
+
+Such a file still counts as failed, and the scan exits 3. The file is not
+recorded, because sqlite3 cannot bind the path (#83). The rename is the
+workaround until #83 is decided.
+
+**What was ruled out.**
+
+- *`backslashreplace` alone.* It stops the crash, but it prints `\udc82`. That
+  form is not the name of the file, and no shell command accepts it.
+- *`surrogateescape` on stdout.* It writes the raw bytes back out. The run does
+  not crash, but a terminal shows a replacement character, the log file holds
+  bytes that are not valid UTF-8, and the operator cannot copy the name.
+- *Setting the locale in the wrapper.* It fixes one caller. The bundle runs
+  from cron, from `sudo` and by hand, and each has its own locale.
+
+**Related issues:** #82, #83

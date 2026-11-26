@@ -401,5 +401,5 @@ Desktop-Ops installer's gate is cleared. Requirement 6 (dropping the
 `sys.path.append` in `main.py`) was **rejected by the owner**: it stays.
 
 Also open: **#53** (the GUI as its own application, carrying the decision from
-#11 and the path-handling bug from #3), #68 closed with `verify-db` reading the database a page at a time. #69 closed with exit 5 for a missing database directory. #60 closed with the `AuditCounts`
+#11 and the path-handling bug from #3) and **#83** (a name that is not valid UTF-8 cannot be recorded; needs the owner's decision on the storage form). #82 closed with such names listed as `$'...'` strings to rename. #68 closed with `verify-db` reading the database a page at a time. #69 closed with exit 5 for a missing database directory. #60 closed with the `AuditCounts`
 TypedDict.
