@@ -316,6 +316,24 @@ is normally run with `2>/dev/null` to suppress the per-file log, so anything tha
 
   All logging, at **INFO**, in the form `%(asctime)s - %(levelname)s - %(message)s`.
 
+**A file name that is not valid UTF-8** cannot be recorded (#83), so **scan** counts the
+file as failed and lists the name in its own block, before the other failures:
+
+```
+names not valid UTF-8 (2), so 4 file(s) were not recorded; rename these to record them:
+  $'/home2/dir\x82'  (3 files)
+  $'/home2/caf\x82.txt'
+other failures (1):
+  /home2/locked: [Errno 13] Permission denied
+```
+
+Each name is a bash **$'...'** string that holds the exact bytes, so it can be pasted
+into **mv**. When a directory name is the problem, the directory is listed once with the
+number of files under it. This block is never truncated: it is the list of names to
+rename (#82). The header and the **audit-db** and **verify-db** summaries print such a
+path in the same form. Any other output prints it with Python's **\\udc82** escape, and
+a name never stops a run.
+
 Every action that runs prints a header first, before it creates or opens anything:
 
 ```

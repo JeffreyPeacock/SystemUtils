@@ -24,7 +24,7 @@ below worth reading before changing anything.
 graphical user-interface" requirement is **not met here, and will not be**: the
 GUI left this project in #51 and becomes a separate application (#53). This is
 a headless CLI scanner — no Tk, no display, no optional GUI flag. The 95%
-coverage requirement is **met**, at 99.76%; epic #8 and its children #32-#36
+coverage requirement is **met**, at 99.77%; epic #8 and its children #32-#36
 and #45 are closed.
 
 ## Tech Stack
@@ -115,15 +115,15 @@ if any file under `dist/` was created, changed or removed.
 
 ## Testing
 
-**447 tests across 32 modules, all passing, no xfails** (in a fresh clone and in CI; a checkout that has the gitignored `cmpdirs.sh` collects 2 more, from `tests/test_script_conventions.py`). Coverage is on by default
+**467 tests across 33 modules, all passing, no xfails** (in a fresh clone and in CI; a checkout that has the gitignored `cmpdirs.sh` collects 2 more, from `tests/test_script_conventions.py`). Coverage is on by default
 via `pytest.ini` (`--cov=src --cov-branch`), writes `coverage.xml` and
 `test-results.xml`, and enforces `--cov-fail-under=99` against a measured
-**99.76%** combined line+branch coverage.
+**99.77%** combined line+branch coverage.
 
 Per-module figures live in `.coverage-summary.md`, regenerated every run and
 committed — read that rather than duplicating a table here that goes stale. As
 as of 2026-09-04 every measured module is at 100% line and branch except
-`main`, at 99.5%/97.9%. The two statements left there are uncovered on purpose
+`main`, at 99.5%/98.0%. The two statements left there are uncovered on purpose
 and named in `tests/test_main_dispatch.py`: `sys.exit(main())` runs only when
 the file is executed as a script, and the fall-through past the last `elif` is
 unreachable because argparse rejects anything outside `choices`. Forcing either
@@ -327,6 +327,7 @@ rewritten the same day when #6 and #7 landed.
 - **An invalid invocation exits non-zero.** 1 for a missing or invalid argument, 2 for an argparse rejection, 0 for `help` (#23). Scripts under `set -e` therefore stop, which they did not before.
 - **`verify-db` is the only action that can detect corruption, and it never writes.** `scan` and `audit-db` both compare `(size, mtime)` and skip hashing when they match, so they skip exactly the files whose contents were in question — bit rot, a bad sector and a failing cable all rewrite bytes without touching either (#50). `verify-db` rehashes unconditionally and compares against the **stored** `md5sum`. It issues one read query and no writes, deliberately: a verify that repaired the baseline on a mismatch would destroy the only evidence *and* pass on its second run. Three outcomes, never two — match, mismatch, could-not-read — and an unreadable file is **not** a pass. `tests/test_verify_db.py` also records that `scan` and `audit-db` still miss corruption in place, because that is the action's whole reason for existing.
 - **The database's directory is checked before anything opens it, never created, and a problem exits 5** (#69). `_database_directory_problem` in `src/main.py` runs after the header and before `initialize_db`, with four messages: does not exist, not a directory, not writable, and cannot check (an unsearchable ancestor, which `os.path.isdir` would have called missing). Writability is checked **only when the database file does not exist yet**, so a report off an existing database in a read-only directory still runs. 5 is not 1: the argument was well formed. Before #69 the run died in sqlite3 with a traceback and exited 1 by accident, as Python's status for an uncaught exception. `tests/test_database_directory.py`; with the check disabled, 8 of its 11 tests fail, and the 3 that pass assert the healthy cases.
+- **A file name that is not valid UTF-8 cannot stop a run, and the scan lists it to be renamed** (#82). Python decodes such a name with `surrogateescape` (0x82 becomes U+DC82), and a UTF-8 locale writes stdout in strict mode, so before #82 one such path in the scan summary raised `UnicodeEncodeError` after a three-day `/home2` scan and the run exited 1, not 3. Two layers: `main()` sets stdout to `errors='backslashreplace'` before anything prints, and the header and the three summaries print such paths with `utils.display_path`, a bash `$'...'` string with the exact bytes (`shell_quoted`). The scan summary puts these names in their own untruncated block, with a directory listed once and its file count (`name_to_rename`). The other failures follow as `other failures (N):`. Such a file is still counted as failed, because sqlite3 cannot bind it (#83, open). **The subprocess tests set `LC_ALL=C.UTF-8`**: in the C locale Python uses `surrogateescape` on stdout and the old code passed. `tests/test_non_utf8_names.py`. Without the stdout setting the report test fails, and without `display_path` 7 tests fail.
 - **A mismatch exits 4, which is deliberately not 3.** 3 means part of the answer is unknown; 4 means the answer is known and bad, and an operator does something different about each. A mismatch outranks an unreadable file when both happen in one run.
 - **A walk that stops early is a failure, and the workers still exit** (#75). Both producers (`scan_dir`, `scan_dir_report`) put their sentinels in `finally` — before this, an exception in the walk left every worker waiting in `get()` and the scan never returned. The `finally` alone would have hidden the gap, so the stopped walk is also recorded: `scan` lists the directory as `walk stopped early: <reason>` and exits 3; `scan_dir_report` returns False and `main` exits 3. The traceback is logged. `tests/test_producer_failure.py`; each half was removed and seen to fail — the hang through pytest-timeout.
 - **An incomplete scan exits 3, and the counts are on stdout.** `scan` and `audit-db` print `scan complete: N hashed, N skipped unchanged, N failed` followed by each failed path, and return **3** if anything failed (#57). 3 is deliberately not 1 or 2: those mean nothing was recorded, while 3 means part of the tree was recorded and part was not. Before this, an unreadable file produced one ERROR line among the per-file log lines and **exit 0**, so a partial index was indistinguishable from a complete one — and it cannot be detected afterwards, because the database looks the same whether a file was absent or unreadable. A path on the command line that is neither a file nor a directory counts as a failure for the same reason. The summary goes to **stdout** while all logging goes to stderr, so it survives the `2>/dev/null` a scheduled scan uses.

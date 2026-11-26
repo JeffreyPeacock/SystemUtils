@@ -13,6 +13,7 @@ from src.db import (
     count_paths_with_prefix, iter_recorded_checksums,
 )
 from src.md5sum import compute_md5
+from src.utils import display_path, is_valid_utf8, name_to_rename, shell_quoted
 from src.regular_files import (
     NotARegularFile, SkippedEntries, file_kind, require_regular_file,
     walk_regular_files,
@@ -113,11 +114,35 @@ class ScanTally:
         not_regular = self.not_regular.summary_line()
         if not_regular:
             lines.append(not_regular)
-        if self.failed:
-            shown = self.failures[:MAX_FAILURES_LISTED]
-            lines.append(f"failed ({self.failed}):")
+        # A name that is not valid UTF-8 fails before it is read: neither print()
+        # nor sqlite3 can encode it (#82, #83). The operator's fix is to rename
+        # it, so those names get their own list, in a form `mv` accepts, and
+        # are not mixed into the read failures. The list is never truncated:
+        # it is the list of things to rename, and one directory stands for
+        # every file under it.
+        bad = [(path, error) for path, error in self.failures
+               if not is_valid_utf8(path)]
+        other = [(path, error) for path, error in self.failures
+                 if is_valid_utf8(path)]
+        if bad:
+            files_under = {}
+            for path, _ in bad:
+                name = name_to_rename(path)
+                files_under[name] = files_under.get(name, 0) + 1
+            lines.append(
+                f"names not valid UTF-8 ({len(files_under)}), so "
+                f"{len(bad)} file(s) were not recorded; rename these to "
+                f"record them:"
+            )
+            for name, count in files_under.items():
+                lines.append(f"  {shell_quoted(name)}"
+                             + (f"  ({count} files)" if count > 1 else ""))
+        if other:
+            shown = other[:MAX_FAILURES_LISTED]
+            label = "other failures" if bad else "failed"
+            lines.append(f"{label} ({len(other)}):")
             lines.extend(f"  {path}: {error}" for path, error in shown)
-            remaining = self.failed - len(shown)
+            remaining = len(other) - len(shown)
             if remaining:
                 lines.append(
                     f"  ... and {remaining} more; every one is on an ERROR line "
@@ -354,7 +379,7 @@ class VerifyTally:
         if self.mismatches:
             lines.append(f"MISMATCHED ({self.mismatched}):")
             for path, stored, actual in self.mismatches[:MAX_FAILURES_LISTED]:
-                lines.append(f"  {path}")
+                lines.append(f"  {display_path(path)}")
                 lines.append(f"    stored {stored}")
                 lines.append(f"    actual {actual}")
             if self.mismatched > MAX_FAILURES_LISTED:
@@ -365,7 +390,7 @@ class VerifyTally:
         if self.failures:
             lines.append(f"unreadable ({self.unreadable}):")
             for path, message in self.failures[:MAX_FAILURES_LISTED]:
-                lines.append(f"  {path}: {message}")
+                lines.append(f"  {display_path(path)}: {message}")
             if self.unreadable > MAX_FAILURES_LISTED:
                 lines.append(
                     f"  ... and {self.unreadable - MAX_FAILURES_LISTED} more; "

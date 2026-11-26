@@ -478,6 +478,36 @@ All logging, at
 in the form
 .RB ` "%(asctime)s \- %(levelname)s \- %(message)s" '.
 .PP
+.B A file name that is not valid UTF-8
+cannot be recorded (#83), so
+.B scan
+counts the file as failed and lists the name in its own block, before the other
+failures:
+.PP
+.EX
+names not valid UTF\-8 (2), so 4 file(s) were not recorded; rename these to record them:
+  $'/home2/dir\ex82'  (3 files)
+  $'/home2/caf\ex82.txt'
+other failures (1):
+  /home2/locked: [Errno 13] Permission denied
+.EE
+.PP
+Each name is a bash
+.B $'...'
+string that holds the exact bytes, so it can be pasted into
+.BR mv .
+When a directory name is the problem, the directory is listed once with the
+number of files under it.
+This block is never truncated: it is the list of names to rename (#82).
+The header and the
+.B audit\-db
+and
+.B verify\-db
+summaries print such a path in the same form.
+Any other output prints it with Python's
+.B \eudc82
+escape, and a name never stops a run.
+.PP
 Every action that runs prints a header first, before it creates or opens
 anything:
 .PP
